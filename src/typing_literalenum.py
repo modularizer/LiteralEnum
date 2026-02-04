@@ -533,6 +533,35 @@ class LiteralEnumMeta(type):
         combined_name: str = f"{cls.__name__}|{other.__name__}"
         return LiteralEnumMeta(combined_name, (LiteralEnum,), ns)
 
+    def __and__(cls, other: LiteralEnumMeta) -> LiteralEnumMeta:
+        """Intersect two LiteralEnums into a new anonymous LiteralEnum.
+
+        The result contains only values present in *both* operands.
+        Names and order are taken from the left operand (*cls*).
+
+        Example::
+
+            class ReadWrite(LiteralEnum):
+                GET = "GET"
+                POST = "POST"
+
+            class ReadOnly(LiteralEnum):
+                GET = "GET"
+                HEAD = "HEAD"
+
+            Common = ReadWrite & ReadOnly
+            list(Common)          # ["GET"]
+            Common.__name__       # "ReadWrite&ReadOnly"
+        """
+        if not isinstance(other, LiteralEnumMeta):
+            return NotImplemented
+        ns: dict[str, Any] = {
+            k: v for k, v in cls._members_.items()
+            if _strict_key(v) in other._value_keys_
+        }
+        combined_name: str = f"{cls.__name__}&{other.__name__}"
+        return LiteralEnumMeta(combined_name, (LiteralEnum,), ns)
+
     def __call__(cls, value: Any) -> Any:
         """Call the LiteralEnum class to validate a value.
 

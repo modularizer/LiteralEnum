@@ -541,6 +541,95 @@ class TestOr:
 
 
 # ===================================================================
+# __and__ — intersecting enums
+# ===================================================================
+
+class TestAnd:
+    def test_intersect_overlapping(self):
+        class A(LiteralEnum):
+            X = "shared"
+            Y = "only_a"
+
+        class B(LiteralEnum):
+            Z = "shared"
+            W = "only_b"
+
+        C = A & B
+        assert list(C) == ["shared"]
+        assert "shared" in C
+        assert "only_a" not in C
+        assert "only_b" not in C
+        assert C.__name__ == "A&B"
+
+    def test_intersect_disjoint(self):
+        class A(LiteralEnum):
+            X = "x"
+
+        class B(LiteralEnum):
+            Y = "y"
+
+        C = A & B
+        assert list(C) == []
+        assert len(C) == 0
+
+    def test_intersect_identical(self):
+        C = HttpMethod & HttpMethod
+        assert list(C) == ["GET", "POST", "DELETE"]
+
+    def test_intersect_preserves_left_names(self):
+        class A(LiteralEnum):
+            ALPHA = "shared"
+
+        class B(LiteralEnum):
+            BETA = "shared"
+
+        C = A & B
+        assert C.canonical_name("shared") == "ALPHA"
+
+    def test_intersect_preserves_left_order(self):
+        class A(LiteralEnum):
+            X = "b"
+            Y = "a"
+            Z = "c"
+
+        class B(LiteralEnum):
+            P = "c"
+            Q = "a"
+
+        C = A & B
+        assert list(C) == ["a", "c"]
+
+    def test_and_non_literalenum_returns_not_implemented(self):
+        result = HttpMethod.__and__("not a literal enum")
+        assert result is NotImplemented
+
+    def test_and_result_is_literalenum(self):
+        class A(LiteralEnum):
+            X = 1
+            Y = 2
+
+        class B(LiteralEnum):
+            Z = 2
+            W = 3
+
+        C = A & B
+        assert isinstance(C, LiteralEnumMeta)
+        assert C.validate(2) == 2
+        with pytest.raises(ValueError):
+            C.validate(1)
+
+    def test_bool_int_strict_intersection(self):
+        class A(LiteralEnum):
+            YES = True
+
+        class B(LiteralEnum):
+            ONE = 1
+
+        C = A & B
+        assert list(C) == []  # True and 1 are distinct by strict key
+
+
+# ===================================================================
 # Edge cases
 # ===================================================================
 
