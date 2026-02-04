@@ -1,9 +1,9 @@
 # PEP XXX: LiteralEnum — Namespaced Runtime Literals with Static Exhaustiveness Checking
 
 | PEP            | XXX                                                                           |
-| -------------- |-------------------------------------------------------------------------------|
+| -------------- | ----------------------------------------------------------------------------- |
 | Title          | LiteralEnum — Namespaced Runtime Literals with Static Exhaustiveness Checking |
-| Author         | *Torin Halsted*                                                               |
+| Author         | Torin Halsted                                                                 |
 | Status         | Draft                                                                         |
 | Type           | Standards Track                                                               |
 | Topic          | Typing                                                                        |
@@ -15,11 +15,11 @@
 
 ## Abstract
 
-This PEP proposes a new typing construct, `LiteralEnum`, that defines a **finite set of literal values** with:
+This PEP proposes a new typing construct, `LiteralEnum`, for defining **finite, named sets of literal values** that:
 
-* a **runtime namespace** (attribute access, iteration, validation),
-* **true runtime values** (e.g. actual `str`, `int`, `bool`, or `None` objects),
-* and **precise static type checking** equivalent to a `Literal[...]` union.
+* behave as **ordinary runtime literals** (e.g. `str`, `int`, `bool`, `None`),
+* provide a **runtime namespace** with iteration, validation, and membership testing,
+* and are interpreted by type checkers as an **exhaustive `typing.Literal[...]` union**.
 
 A `LiteralEnum` allows a single definition to serve simultaneously as:
 
@@ -27,7 +27,7 @@ A `LiteralEnum` allows a single definition to serve simultaneously as:
 * a runtime validator and iterable of allowed values,
 * and a static type that accepts only those values.
 
-This construct addresses a common Python pattern—small, closed sets of string or scalar constants—without requiring duplication between `Enum` and `Literal`, checker-specific plugins, or separate runtime and typing definitions.
+This construct addresses a common Python pattern—small, closed sets of string or scalar constants—without requiring duplication between `Enum` and `Literal`, checker-specific plugins, or parallel runtime and typing definitions.
 
 ---
 
@@ -40,7 +40,7 @@ Today, developers must choose between two incomplete options:
 * **`Enum` / `StrEnum`**, which provide a runtime namespace and iteration, but require passing enum members rather than raw literal values in typed APIs; or
 * **`Literal[...]`**, which enables precise static checking of raw values, but provides no runtime namespace, iteration, or validation mechanism.
 
-As a result, common APIs face an ergonomic mismatch:
+This leads to an ergonomic mismatch in common APIs:
 
 ```python
 def handle_request(method: HttpMethod) -> None: ...
@@ -56,7 +56,7 @@ To bridge this gap, developers frequently resort to:
 
 These approaches are verbose, error-prone, and obscure intent. They also violate the principle of a **single source of truth**, making refactors and extensions risky.
 
-The core problem is that Python currently lacks a construct that directly represents:
+The core problem is that Python lacks a construct that directly represents:
 
 > *a finite, named set of literal runtime values that is also statically exhaustive.*
 
@@ -84,9 +84,8 @@ handle("git")            # type checker error
 
 At runtime:
 
-* `HttpMethod.GET` is the string `"GET"`,
-* `isinstance("GET", HttpMethod)` is true,
-* iteration yields the allowed values,
+* `HttpMethod.GET` evaluates to the string `"GET"`,
+* iteration yields the allowed unique values by strict equality, first-seen order,
 * and calling `HttpMethod(value)` validates membership.
 
 At type-check time, `HttpMethod` is treated as equivalent to:
@@ -112,7 +111,7 @@ derived directly from the class definition.
     while rejecting unknown values.
 * Serve as a **single source of truth** for runtime behavior and static typing.
 * Support **iteration, membership testing, and validation** at runtime.
-* Support literal types beyond strings, including `int`, `bool`, and `None`.
+* Support literal types beyond strings, including `int`, `bool`, `bytes`, and `None`.
 
 ---
 
@@ -130,8 +129,6 @@ This PEP does not:
 
 ## Rationale
 
-The absence of a construct representing “a finite set of runtime literals with names” has led to widespread patterns that split runtime values from static types.
-
 While `Enum` emphasizes identity and membership, and `Literal` emphasizes exhaustiveness, many real-world APIs require **both simultaneously**. In particular, string-centric protocols and configuration values are most ergonomic when passed as plain literals, yet benefit greatly from static exhaustiveness checking.
 
 `LiteralEnum` occupies a narrow but important middle ground:
@@ -139,7 +136,7 @@ While `Enum` emphasizes identity and membership, and `Literal` emphasizes exhaus
 * **At runtime**, it behaves as a namespace and validator over literal values.
 * **In type positions**, it is treated as a `Literal[...]` union derived from its declared members.
 
-By standardizing this pattern, Python can eliminate a class of boilerplate, reduce duplication, and improve both readability and correctness across a wide range of applications.
+By standardizing this pattern, Python can eliminate a class of boilerplate, reduce duplication, and improve both readability and correctness.
 
 ---
 
@@ -147,23 +144,21 @@ By standardizing this pattern, Python can eliminate a class of boilerplate, redu
 
 ### Overview
 
-`LiteralEnum` is a base class in the `typing` module. Subclassing `LiteralEnum` defines a **finite set of members** declared as class attributes. These declared members:
+`LiteralEnum` is a base class proposed to be provided by the `typing` module.
 
-* are **runtime literal values** (e.g. `str`, `int`, `bool`, `None`, `bytes`, optionally `float`),
-* are accessible by name on the class (e.g. `HttpMethod.GET`),
-* and determine the **static type interpretation** of the subclass, which type checkers must treat as an equivalent `typing.Literal[...]` union of the declared values.
+Subclassing `LiteralEnum` defines a **finite set of members** declared as class attributes. These members:
 
-In type positions, a `LiteralEnum` subclass is treated as:
+* are **runtime literal values**,
+* are accessible by name on the class,
+* and determine the **static type interpretation** of the subclass.
 
-```python
-Literal[v1, v2, ...]
-```
+In type positions, a `LiteralEnum` subclass is interpreted as a `typing.Literal[...]` union of its declared values.
 
-where `v1..vn` are the member values declared on the class.
+---
 
 ### Declaring Members
 
-A subclass of `LiteralEnum` declares members using class attributes:
+Members are declared using **UPPERCASE public class attributes**:
 
 ```python
 class HttpMethod(LiteralEnum):
@@ -171,15 +166,19 @@ class HttpMethod(LiteralEnum):
     POST = "POST"
 ```
 
-A class attribute is considered a `LiteralEnum` member if it meets all of the following:
+A class attribute is considered a `LiteralEnum` member if and only if:
 
-1. The attribute name is a valid identifier and does not start with `_`.
-2. The attribute value is a **supported literal value** (see below).
-3. The attribute is defined directly in the class body (not via runtime mutation).
+1. Its name is all-uppercase and does not start with `_`.
+2. Its value is a supported literal value.
+3. It is defined directly in the class body.
 
-Type checkers should consider only statically visible assignments in the class body. Runtime assignment to add new members is not supported.
+Runtime mutation to add, remove, or reassign members is not supported.
 
-#### Supported Literal Value Types
+Multiple member names MAY refer to the same literal value.
+
+---
+
+### Supported Literal Value Types
 
 Member values MUST be one of:
 
@@ -188,141 +187,152 @@ Member values MUST be one of:
 * `int`
 * `bool`
 * `None`
+* `float` is included with restrictions (see next section)
 
-Member values MAY include `float`, but type checkers and the runtime MUST be consistent about whether `float` is permitted. (See “Open Issues”.)
+Member values MUST be statically evaluable literal expressions, as defined
+by the rules for `typing.Literal`.
 
-Type checkers MUST reject member values that are not statically evaluable literals of a supported type.
+---
+
+#### Floating-Point Values
+
+Float support is intentionally restricted to ensure total, deterministic equality semantics.
+
+`float` member values are permitted with the following restrictions:
+
+* NaN values are forbidden.
+* Negative zero (`-0.0`) is forbidden.
+* Membership and validation use strict equality (type and value).
+
+These restrictions are required to ensure well-defined runtime membership
+and validation semantics.
+
+
+---
 
 ### Static Type Interpretation
 
-In type positions, a `LiteralEnum` subclass `E` MUST be interpreted by type checkers as:
+In type positions, a `LiteralEnum` subclass `E` MUST be interpreted as:
 
 ```python
-Literal[<member values of E>]
+Literal[v1, v2, ...]
 ```
 
-For example:
-
-```python
-class HttpMethod(LiteralEnum):
-    GET = "GET"
-    POST = "POST"
-    DELETE = "DELETE"
-```
-
-Type checkers must treat `HttpMethod` as equivalent to:
-
-```python
-Literal["GET", "POST", "DELETE"]
-```
+where `v1..vn` are the declared member values.
 
 This implies:
 
-* Passing a matching literal is accepted:
+* Matching literals are accepted.
+* Non-member literals are rejected.
+* Variables typed as a broader base type (e.g. `str`) are rejected unless narrowed to a known literal.
 
-  ```python
-  def handle(m: HttpMethod) -> None: ...
-  handle("GET")  # OK
-  ```
+---
 
-* Passing a non-member literal is rejected:
+#### Subclassing and Type Relationships
 
-  ```python
-  handle("git")  # error
-  ```
+A `LiteralEnum` subclass defines a **distinct finite set of literal values**
+from its base class.
 
-* Passing a value typed as the broader base type (e.g. `str`) is rejected unless it is a known literal:
+Subclassing a `LiteralEnum` does **not** imply substitutability:
+a value of a subclass type is not assignable to a base `LiteralEnum` type
+unless the subclass’s declared literal values form a **subset** of the base
+class’s values.
 
-  ```python
-  x: str = "GET"
-  handle(x)  # error
-  y = "GET"
-  handle(y)  # OK (y inferred as Literal["GET"])
-  ```
+Type checkers SHOULD treat each `LiteralEnum` subclass as a separate
+`Literal[...]` union derived from its own declared members, regardless of
+inheritance structure.
+
+Extending a LiteralEnum produces a wider type (a superset of literals), analogous to widening a Literal[...] union.
+
+---
 
 ### Runtime Semantics
 
 #### Member Values
 
-Each member attribute evaluates at runtime to the literal value assigned:
+Each member evaluates to its literal value at runtime:
 
 ```python
 assert HttpMethod.GET == "GET"
 assert isinstance(HttpMethod.GET, str)
-assert type(HttpMethod.GET) is str
 ```
 
-`LiteralEnum` does not introduce wrapper objects for members.
+No wrapper objects are introduced.
+
+---
 
 #### Validation / Construction
 
-Calling a `LiteralEnum` subclass as a function validates membership and returns the passed value:
+Calling a `LiteralEnum` subclass validates membership:
 
 ```python
-assert HttpMethod("GET") == "GET"
-HttpMethod("git")  # raises ValueError
+HttpMethod("GET")   # returns "GET"
+HttpMethod("git")   # raises ValueError
 ```
 
-The raised `ValueError` message SHOULD include the allowed values in a readable form.
+---
 
 #### Iteration
 
-Iterating over a `LiteralEnum` subclass yields the member values in definition order:
+Iterating over a `LiteralEnum` yields unique member values by strict equality, first-seen order:
 
 ```python
 list(HttpMethod) == ["GET", "POST", "DELETE"]
 ```
 
-The iteration result SHOULD be typed as `Iterator[HttpMethod]` by type checkers.
+---
 
-#### Membership Testing
+#### Membership and Equality Semantics
 
-Membership MAY be supported as:
+Membership testing and validation MUST use **strict equality**:
+
+* Two values are equal only if both their **type and value** are equal.
+* This prevents collisions such as `True` vs `1`.
 
 ```python
-"GET" in HttpMethod  # True
-"git" in HttpMethod  # False
+True in MyEnum   # distinct from 1
 ```
 
-If supported, membership MUST test against the set of member values using normal equality (`==`) and must preserve `bool`/`int` distinctions (see below).
+---
 
 #### `isinstance`
 
-A `LiteralEnum` subclass SHOULD support:
+A `LiteralEnum` subclass MAY support `isinstance(value, E)` returning
+`True` if and only if `value` is a valid member value of `E`.
 
-```python
-isinstance("GET", HttpMethod)        # True
-isinstance(HttpMethod.GET, HttpMethod)  # True
-isinstance("git", HttpMethod)        # False
-```
+Pros:
+- Enables familiar, concise runtime validation (`isinstance(x, E)`) in addition to `x in E` or `E(x)` or `E.is_valid(x)`.
+- Plays nicely with many existing code patterns and third-party frameworks that already branch on `isinstance(...)` (e.g. validation/dispatch hooks).
+- Keeps call sites readable when E is used like a “value class” in configuration parsing or boundary validation.
+- given the core feature of `method = "GET"` passing a typehint like `method: HttpMethod`, `isinstance(method, HttpMethod)` fits a basic mental model
 
-This is achieved via metaclass instance checking; it does not require member values to have runtime type `HttpMethod`.
+Cons:
+- Can be surprising because E is not a traditional runtime type; it classifies literals rather than instances of a distinct runtime class.
+- Risks confusion with normal subtyping expectations (e.g. readers may assume E is a real runtime type of str/int), especially given that members are plain literals.
+- May interact unexpectedly with metaclass-based __instancecheck__ and tools that assume isinstance reflects concrete object inheritance.
+- Provides no guaranteed static benefit: type checkers are not required to treat isinstance(value, E) as a narrowing guard, so it may encourage patterns that don’t improve type safety.
 
-Implementations MUST ensure correct behavior for `bool` values, since `bool` is a subclass of `int` and `True == 1` is `True`. Membership and `isinstance` checks MUST treat `True` and `1` as distinct member values.
+Type checkers are not required to use isinstance(value, E) for narrowing.
+
+
+---
 
 ### Introspection API
 
-A `LiteralEnum` subclass MUST expose a mapping of member names to values:
+A `LiteralEnum` subclass MUST expose:
 
 ```python
-HttpMethod.mapping == {"GET": "GET", "POST": "POST", "DELETE": "DELETE"}
+HttpMethod.__members__  # Mapping[str, value]
 ```
 
-The `.mapping` attribute MUST be a `dict[str, HttpMethod]` (or `Mapping[str, HttpMethod]` if returned as a view).
+This mapping is read-only.
 
-A `LiteralEnum` subclass SHOULD expose the ordered member values as:
+Implementations MAY also expose:
 
 ```python
-HttpMethod.values()  # returns an iterable of member values
+HttpMethod.mapping      # alias of __members__
+HttpMethod.values()     # iterable of values
 ```
-
-or alternatively via a standardized attribute:
-
-```python
-HttpMethod.__members__  # mapping of names to values (similar to Enum)
-```
-
-The final API surface (e.g. `.mapping` vs `__members__`) is specified in “Open Issues”.
 
 ---
 
@@ -332,61 +342,27 @@ The final API surface (e.g. `.mapping` vs `__members__`) is specified in “Open
 
 Type checkers MUST:
 
-* Provide attribute completion / checking for declared members:
+* Validate attribute access for declared members.
+* Reject access to undeclared members.
+* Attribute access E.MEMBER has type Literal\[value\] and is assignable to E.
 
-  ```python
-  HttpMethod.GET  # OK
-  HttpMethod.got  # error
-  ```
+---
 
-* Treat access to a declared member as both:
+### Narrowing and Exhaustiveness
 
-  * the specific literal value, and
-  * the `LiteralEnum` type.
+Type checkers SHOULD support:
 
-Concretely, for:
-
-```python
-x = HttpMethod.GET
-```
-
-type checkers SHOULD infer:
-
-* `x` has type `HttpMethod` (equivalently `Literal["GET"]`),
-* and can reveal the value `"GET"` as a `Literal` if the checker supports value display.
-
-### Exhaustiveness / Narrowing
-
-Type checkers SHOULD allow narrowing when comparing against member values, consistent with normal `Literal` unions:
-
-```python
-def f(m: HttpMethod) -> None:
-    if m == "GET":
-        ...
-    else:
-        ...
-```
-
-Type checkers MAY support exhaustiveness checking in `match` statements as for `Literal` unions:
-
-```python
-def f(m: HttpMethod) -> int:
-    match m:
-        case "GET":
-            return 1
-        case "POST":
-            return 2
-        case "DELETE":
-            return 3
-```
+* narrowing via comparisons,
+* exhaustiveness checking in `match` statements,
+* the same behaviors supported for equivalent `Literal[...]` unions.
 
 ---
 
 ## Backwards Compatibility
 
-This PEP adds a new construct. It does not change runtime behavior of existing programs.
+This PEP introduces a new construct and does not affect existing code.
 
-Because `LiteralEnum` members are plain literals, it composes naturally with existing code expecting base types such as `str` or `int`.
+Because members are plain literals, `LiteralEnum` composes naturally with APIs expecting base types such as `str` or `int`.
 
 ---
 
@@ -394,73 +370,50 @@ Because `LiteralEnum` members are plain literals, it composes naturally with exi
 
 A reference implementation consists of:
 
-1. A runtime implementation of `LiteralEnum` (likely via a metaclass) providing:
+1. A runtime implementation (likely via a metaclass) providing:
 
    * member collection,
+   * strict membership semantics,
    * iteration,
-   * membership testing,
+   * validation,
    * `isinstance` support,
-   * `E(value)` validation,
-   * and member mapping introspection.
+   * and introspection.
 
-2. Type checker support to interpret `LiteralEnum` subclasses as `Literal[...]` unions derived from class members.
+2. Type checker support interpreting `LiteralEnum` subclasses as `Literal[...]` unions.
 
-A provisional implementation can be shipped in `typing_extensions` to enable experimentation and early checker adoption before inclusion in `typing`.
+An experimental implementation may be provided in `typing_extensions`.
 
 ---
 
 ## Rejected Alternatives
 
-This section summarizes common approaches and why they do not satisfy the goals of this PEP.
+### `Enum` / `StrEnum`
 
-### `StrEnum` and `Enum`-based Solutions
+Enums require enum members at call sites and introduce wrapper objects at runtime.
 
-`StrEnum` and `Enum`-based patterns provide excellent namespacing and iteration, but require enum members at call sites and do not allow raw literals to type-check as the enum type:
+---
 
-```python
-def handle(m: HttpMethod) -> None: ...
-handle("GET")  # rejected by type checkers
-```
+### `Literal[...]` Alone
 
-They also produce member objects that are not plain literals at runtime.
+`Literal[...]` provides no runtime namespace, validation, or iteration.
 
-### `Literal[...]` Type Aliases
-
-`Literal[...]` provides precise static checking of raw values but provides no runtime namespace (`HttpMethod.GET`), no iteration API, and no runtime validation.
+---
 
 ### Parallel Namespace + Type Alias
 
-Defining both a constant namespace and a `Literal[...]` alias introduces duplication and violates the “single source of truth” goal.
+Splits runtime values from static types and duplicates literals.
+
+---
 
 ### Runtime Validation of `str`
 
-Accepting `str` and validating membership at runtime is pragmatic but loses static rejection of unknown values and does not support exhaustiveness checking.
+Loses static exhaustiveness checking.
 
 ---
 
 ## Open Issues
 
-1. **`float` membership**
-
-   * `Literal` allows floats, but floats have edge cases (`NaN`, `-0.0`, rounding). This PEP must decide whether to include `float` values as supported members.
-
-2. **Introspection surface**
-
-   * Should the standardized mapping attribute be named `__members__` (like `Enum`), `.mapping`, or both?
-   * Should `.values()` / `.items()` / `.keys()` be standardized?
-
-3. **Iteration order**
-
-   * This PEP specifies definition order. Confirm whether base-class member inheritance should append, override, or disallow duplicates.
-
-4. **Duplicate values**
-
-   * Should duplicate member values be permitted with different names?
-   * If permitted, how should `.mapping` behave?
-
-5. **Subclassing and inheritance**
-
-   * Should subclasses inherit members from base `LiteralEnum` classes?
-   * If yes, what are the rules for overriding names and values?
-
-
+1. Whether to make the `isinstance` a MUST, SHOULD, or MAY requirement or to remove it entirely
+2. Whether `float` should ever be supported. (right now it is, but with restrictions)
+3. Whether duplicate values under different names should be permitted. (right now they are)
+4. Whether subclassing should allow extending or overriding members. (right now subclassing does allow extending)

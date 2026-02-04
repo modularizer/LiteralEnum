@@ -1,9 +1,20 @@
 from __future__ import annotations
 
-from typing import Any, Iterator, Literal, TypeVar, Generic, Iterable
+import math
+from typing import Any, Iterator, Literal, Mapping, TypeVar, TypeGuard, cast
+from types import MappingProxyType
 
-_LITERAL_TYPES = (str, int, bytes, bool, type(None))
+
+# float supported with restrictions: NaN and -0.0 are forbidden
+_LITERAL_TYPES = (float, str, int, bytes, bool, type(None))
 _MISSING = object()
+
+def _is_nan(v: float) -> bool:
+    return math.isnan(v)
+
+def _is_neg_zero(v: float) -> bool:
+    # True for -0.0, False for 0.0 and all non-zero values
+    return v == 0.0 and math.copysign(1.0, v) < 0.0
 
 
 def _is_literal_type(value: object) -> bool:
@@ -11,75 +22,95 @@ def _is_literal_type(value: object) -> bool:
     return value is None or isinstance(value, _LITERAL_TYPES)
 
 
-def _strict_eq(a: object, b: object) -> bool:
-    return type(a) is type(b) and a == b
-
-
-def _strict_in(obj: object, values: Iterable[Any]) -> bool:
-    # Prefer identity when possible, but fall back to strict equality.
-    for v in values:
-        if v is obj:
-            return True
-        if _strict_eq(v, obj):
-            return True
-    return False
+def _strict_key(value: object) -> tuple[type, object]:
+    """
+    A hashable identity for "strict equality" (type + value), preventing
+    bool/int collisions (True vs 1) and similar edge cases.
+    """
+    return (type(value), value)
 
 
 
-
+E = TypeVar("E", bound="LiteralEnum")
 
 class LiteralEnumMeta(type):
     """
     Metaclass for "literal enums":
+
     - Members are real runtime literal values (strings, ints, bools, None, bytes)
     - Class is usable as a validator: HttpMethod("GET") -> "GET"
     - isinstance("GET", HttpMethod) is supported via __instancecheck__
-    - Iteration yields VALUES; dict(HttpMethod) yields {NAME: value}
-    - Provides typing helpers: .literal and .T
+    - Iteration yields VALUES; dict(HttpMethod.mapping) yields {NAME: value}
+    - Provides typing conveniences: .runtime_literal (a typing.Literal union)
     """
 
     def __new__(mcls, name: str, bases: tuple[type, ...], ns: dict[str, Any]):
         cls = super().__new__(mcls, name, bases, ns)
 
-        # Base class itself: initialize empty containers
+        # Base class itself: initialize empty containers.
         is_subclass = any(isinstance(b, LiteralEnumMeta) for b in bases)
         if not is_subclass:
             cls._members_: dict[str, Any] = {}
-            cls._values_: frozenset[Any] = frozenset()
             cls._ordered_values_: tuple[Any, ...] = ()
+            cls._value_keys_: frozenset[tuple[type, object]] = frozenset()
+            cls.__members__ = MappingProxyType(cls._members_)
             return cls
 
-        # Collect uppercase, non-dunder members as the enum members
-        members = {}
-        if hasattr(cls, "_members_"):
-            members.update(cls._members_)
-        vals = []
-        if hasattr(cls, "_ordered_values_"):
-            vals.extend(cls._ordered_values_)
-        val_set = set()
-        if hasattr(cls, "_values_"):
-            val_set.update(cls._values_)
+        # Inherit base members/value order (if any).
+        inherited_members: dict[str, Any] = {}
+        inherited_values: list[Any] = []
+        inherited_keys: set[tuple[type, object]] = set()
 
-        # Collect own members
+        for b in bases:
+            if isinstance(b, LiteralEnumMeta):
+                inherited_members.update(getattr(b, "_members_", {}))
+                inherited_values.extend(getattr(b, "_ordered_values_", ()))
+                inherited_keys.update(getattr(b, "_value_keys_", frozenset()))
+
+        members: dict[str, Any] = dict(inherited_members)
+        values: list[Any] = list(inherited_values)
+        value_keys: set[tuple[type, object]] = set(inherited_keys)
+
+        # Collect own members: UPPERCASE, non-private.
         for k, v in ns.items():
             if not k.isupper() or k.startswith("_"):
                 continue
             if not _is_literal_type(v):
                 raise TypeError(
                     f"Member '{name}.{k}' has value {v!r} (type {type(v).__name__}), "
-                    "not a valid Literal type."
+                    "not a supported Literal value."
                 )
+            if isinstance(v, float):
+                if _is_nan(v):
+                    raise TypeError(
+                        f"Member '{name}.{k}' is NaN; NaN is not permitted in LiteralEnum."
+                    )
+                if _is_neg_zero(v):
+                    raise TypeError(
+                        f"Member '{name}.{k}' is -0.0; negative zero is not permitted in LiteralEnum."
+                    )
+
             members[k] = v
-            if v not in val_set:
-                val_set.add(v)
-                vals.append(v)
+
+            key = _strict_key(v)
+            if key not in value_keys:
+                value_keys.add(key)
+                values.append(v)
 
         cls._members_ = members
-        cls._values_ = frozenset(val_set)
-        cls._ordered_values_ = tuple(vals)
+        cls._ordered_values_ = tuple(values)
+        cls._value_keys_ = frozenset(value_keys)
+
+        # Enum-compatible read-only mapping of member names -> values.
+        cls.__members__ = MappingProxyType(cls._members_)
+
+        # Convenience for runtime introspection (NOT a typing contract):
+        # - __args__ : tuple of values
+        # - T_       : a Literal[...] union of values
         cls.__args__ = cls._ordered_values_
-        cls.T_ = Literal[*cls._ordered_values_]
         return cls
+
+    # ----- Introspection helpers -----
 
     @property
     def args(cls) -> tuple[Any, ...]:
@@ -91,19 +122,31 @@ class LiteralEnumMeta(type):
 
     @property
     def choices_kv(cls) -> tuple[tuple[str, Any], ...]:
+        # Preserve declaration order of names as stored in _members_
         return tuple((k, v) for k, v in cls._members_.items())
 
-    def to_jsonable(cls, v: Any) -> Any:
-        cls(v)  # validate
-        if isinstance(v, (bytes, bytearray, memoryview)):
-            return bytes(v).decode("base64")
-        return v
-
     @property
-    def validator(cls):
-        return cls  # since cls(value) validates
+    def mapping(cls) -> Mapping[str, Any]:
+        # Return a read-only mapping for stability.
+        return cls.__members__
 
-    # --- Prevent mutation of declared members ---
+    def as_dict(cls) -> dict[str, Any]:
+        return dict(cls._members_)
+
+    # Enum-ish dict-like helpers
+    def keys(cls):
+        return cls._members_.keys()
+
+    def values(cls):
+        # This yields in insertion order of the dict, which matches declaration order
+        # (including inherited members added first).
+        return cls._members_.values()
+
+    def items(cls):
+        return cls._members_.items()
+
+    # ----- Mutation prevention -----
+
     def __setattr__(cls, name: str, value: Any) -> None:
         if name in getattr(cls, "_members_", {}):
             raise AttributeError(f"Cannot reassign '{cls.__name__}.{name}'")
@@ -114,20 +157,23 @@ class LiteralEnumMeta(type):
             raise AttributeError(f"Cannot delete '{cls.__name__}.{name}'")
         super().__delattr__(name)
 
-    # --- Iteration yields VALUES (your preference) ---
+    # ----- Container / iteration -----
+
     def __iter__(cls) -> Iterator[Any]:
+        # Iteration yields VALUES, not names.
         return iter(cls._ordered_values_)
 
     def __reversed__(cls) -> Iterator[Any]:
         return reversed(cls._ordered_values_)
 
     def __len__(cls) -> int:
-        return len(cls._members_)
+        return len(cls._ordered_values_)
 
-    # --- Membership on the class: "x in HttpMethod" ---
     def __contains__(cls, value: object) -> bool:
-        return _strict_in(value, cls._values_)
-
+        try:
+            return _strict_key(value) in cls._value_keys_
+        except TypeError:
+            return False
 
     def __getitem__(cls, key: str) -> Any:
         try:
@@ -135,33 +181,26 @@ class LiteralEnumMeta(type):
         except KeyError:
             raise KeyError(f"'{key}' is not a member of {cls.__name__}") from None
 
-    def keys(cls):
-        return cls._members_.keys()
+    # ----- isinstance + validation -----
 
-    def values(cls):
-        return cls._members_.values()
-
-    def items(cls):
-        return cls._members_.items()
-
-    def as_dict(cls) -> dict[str, Any]:
-        return dict(cls._members_)
-
-    @property
-    def mapping(cls) -> dict[str, Any]:
-        return dict(cls._members_)
-
-
-    # --- isinstance("GET", HttpMethod) ---
     def __instancecheck__(cls, obj: object) -> bool:
-        return _strict_in(obj, cls._values_)
+        # Treat instances of the LiteralEnum as "values in the set".
+        return obj in cls
 
-    # --- Validator/constructor ---
     def __call__(cls, value: Any = _MISSING) -> Any:
+        # Validator/constructor: return the literal value if valid, else error.
         if value is _MISSING:
             raise TypeError(f"{cls.__name__}() requires a value argument")
-        if _strict_in(value, cls._values_):
+
+        if value in cls:
             return value
+
+        # give special error messages for nan or -0.0
+        if isinstance(value, float):
+            if _is_nan(value):
+                raise ValueError("NaN is not a valid LiteralEnum value.")
+            if _is_neg_zero(value):
+                raise ValueError("-0.0 is not a valid LiteralEnum value.")
         valid = ", ".join(repr(v) for v in cls._ordered_values_)
         raise ValueError(f"{value!r} is not a valid {cls.__name__}. Valid: {valid}")
 
@@ -171,16 +210,29 @@ class LiteralEnumMeta(type):
         members = ", ".join(f"{k}={v!r}" for k, v in cls._members_.items())
         return f"<LiteralEnum '{cls.__name__}' [{members}]>"
 
+    # ----- Optional conveniences (library-facing) -----
 
     @property
-    def literal(cls) -> Any:
-        return cls.T_
+    def runtime_literal(cls) -> Any:
+        try:
+            return Literal[*cls._ordered_values_]
+        except TypeError:
+            return Any
+
+
+    def to_jsonable(cls, v: Any) -> Any:
+        cls(v)  # validate
+        if isinstance(v, (bytes, bytearray, memoryview)):
+            # NOTE: "base64" here is a placeholder; decode("base64") is not valid in stdlib.
+            # Keep your existing behavior if you have a custom codec; otherwise implement properly.
+            return bytes(v)
+        return v
 
     @property
     def enum(cls) -> "Enum":
         if getattr(cls, "_enum_cache_", None) is None:
             from enum import Enum
-            cls._enum_cache_ = Enum(cls.__name__, cls._members_)
+            cls._enum_cache_ = Enum(cls.__name__, dict(cls._members_))
         return cls._enum_cache_
 
     @property
@@ -190,7 +242,7 @@ class LiteralEnumMeta(type):
 
         if getattr(cls, "_str_enum_cache_", None) is None:
             from enum import StrEnum
-            cls._str_enum_cache_ = StrEnum(cls.__name__, cls._members_)
+            cls._str_enum_cache_ = StrEnum(cls.__name__, dict(cls._members_))
         return cls._str_enum_cache_
 
     def json_schema(cls) -> "JsonSchema":
@@ -225,14 +277,20 @@ class LiteralEnumMeta(type):
 
     def annotated(cls, *metadata: Any):
         from typing import Annotated
-        return Annotated[cls.literal, *metadata]
+        return Annotated[cls.runtime_literal, *metadata]
 
+    def is_valid(cls: type[E], x: object) -> TypeGuard[E]:
+        return x in cls
 
-
-
+    def validate(cls: type[E], x: Any) -> E:
+        if x in cls:
+            return cast(E, x)
+        raise ValueError(f"{x!r} is not a valid {cls.__name__}")
 
 
 T = TypeVar("T")
+
+
 class LiteralEnum(metaclass=LiteralEnumMeta):
     """Base class for literal enums."""
     def __new__(cls, value: T) -> T: ...

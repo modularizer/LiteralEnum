@@ -16,7 +16,7 @@ def model_from_literal_enum(
     if not hasattr(enum_cls, "literal"):
         raise TypeError("enum_cls must have a .literal (typing.Literal[...]) property")
 
-    ann = enum_cls.literal  # <-- Literal["GET","POST",...]
+    ann = enum_cls.runtime_literal  # <-- Literal["GET","POST",...]
     default = Field(..., description=description) if description else ...
 
     return create_model(
