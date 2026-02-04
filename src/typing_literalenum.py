@@ -508,7 +508,7 @@ class LiteralEnum(metaclass=LiteralEnumMeta):
         """Prevent instantiation — LiteralEnum values are plain literals.
 
         Raises:
-            TypeError: Always.  Use ``validate()`` or ``is_valid()`` instead.
+            TypeError: Always.  Use ``cls.validate(x)`` or `x in cls` instead.
         """
         raise TypeError(
             f"{cls.__name__} is not instantiable; "
