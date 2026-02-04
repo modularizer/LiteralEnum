@@ -348,6 +348,92 @@ class TestPackageInheritance:
 
 
 # ===================================================================
+# .django_choices()
+# ===================================================================
+
+class TestDjangoChoices:
+    def test_returns_list_of_tuples(self):
+        result = HttpMethod.django_choices()
+        assert isinstance(result, list)
+        assert all(isinstance(item, tuple) and len(item) == 2 for item in result)
+
+    def test_format_is_value_name(self):
+        result = HttpMethod.django_choices()
+        assert result == [("GET", "GET"), ("POST", "POST"), ("DELETE", "DELETE")]
+
+    def test_int_values(self):
+        result = StatusCode.django_choices()
+        assert result == [(200, "OK"), (404, "NOT_FOUND")]
+
+    def test_excludes_aliases(self):
+        result = WithAliases.django_choices()
+        assert result == [("GET", "GET"), ("POST", "POST")]
+
+    def test_empty(self):
+        result = Empty.django_choices()
+        assert result == []
+
+
+# ===================================================================
+# .click_choice()
+# ===================================================================
+
+class TestClickChoice:
+    def test_returns_click_choice(self):
+        click = pytest.importorskip("click")
+        result = HttpMethod.click_choice()
+        assert isinstance(result, click.Choice)
+
+    def test_contains_values(self):
+        pytest.importorskip("click")
+        result = HttpMethod.click_choice()
+        assert list(result.choices) == ["GET", "POST", "DELETE"]
+
+
+# ===================================================================
+# .random_choice()
+# ===================================================================
+
+class TestRandomChoice:
+    def test_returns_valid_member(self):
+        result = HttpMethod.random_choice()
+        assert result in HttpMethod
+
+    def test_returns_from_values(self):
+        results = {HttpMethod.random_choice() for _ in range(200)}
+        assert results <= {"GET", "POST", "DELETE"}
+
+    def test_int_enum(self):
+        result = StatusCode.random_choice()
+        assert result in StatusCode
+
+
+# ===================================================================
+# .bare_class()
+# ===================================================================
+
+class TestBareClass:
+    def test_returns_plain_class(self):
+        cls = HttpMethod.bare_class()
+        assert type(cls) is type  # plain type, not LiteralEnumMeta
+
+    def test_has_member_attributes(self):
+        cls = HttpMethod.bare_class()
+        assert cls.GET == "GET"
+        assert cls.POST == "POST"
+        assert cls.DELETE == "DELETE"
+
+    def test_preserves_name(self):
+        cls = HttpMethod.bare_class()
+        assert cls.__name__ == "HttpMethod"
+
+    def test_not_iterable(self):
+        cls = HttpMethod.bare_class()
+        with pytest.raises(TypeError):
+            list(cls)
+
+
+# ===================================================================
 # Optional-dependency integrations (import-gated)
 # ===================================================================
 

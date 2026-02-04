@@ -43,6 +43,18 @@ class LiteralEnumMeta(core.LiteralEnumMeta):
     def annotated(cls):
         return compat.annotated(cls)
 
+    def django_choices(cls):
+        return compat.django_choices(cls)
+
+    def click_choice(cls):
+        return compat.click_choice(cls)
+
+    def random_choice(cls):
+        return compat.random_choice(cls)
+
+    def bare_class(cls):
+        return compat.bare_class(cls)
+
     def set(cls):
         return set(cls)
 
