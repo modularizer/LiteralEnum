@@ -15,6 +15,7 @@ Today this usually leads to duplication, e.g. a constants namespace plus a paral
 * are plain runtime literals (`str`, `int`, `bool`, `None`, etc.),
 * provide a runtime namespace, iteration, and validation, and
 * are treated by type checkers as an exhaustive `Literal[...]` union.
+* This is not intended to replace Enum or Literal, but to cover the narrow case where literal values themselves are the API surface.
 
 Minimal example:
 
@@ -50,7 +51,7 @@ Subclass extension is explicit (`extend=True`) to avoid accidental widening.
 
 **Status**
 
-* I have a small runtime prototype as a proof of concept (linked below); it does not attempt to solve the type-checker side yet
+* I have a small runtime prototype as a proof of concept (linked below, under 200 lines); it does not attempt to solve the type-checker side yet
 * I’m interested in whether this direction seems:
 
   * useful enough to justify checker support, and
@@ -61,11 +62,10 @@ Runtime prototype: https://github.com/modularizer/LiteralEnum/blob/master/src/ty
 
 I’m not attached to the name or the source code, I'm looking to validate the *concept* and scope before going further.
 
-Primarily I wanted to ask:
+Questions for discussion:
 1. Do other people feel this pain point as much as me?
 2. Have you found yourself writing duplicate types: a (`Literal` plus an `Enum` or just a bare class with attributes)?
 
 
 Thanks for any feedback,
 Torin
-
