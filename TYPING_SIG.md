@@ -1,6 +1,6 @@
 **Subject:** Proposal: LiteralEnum — runtime literals with static exhaustiveness
 
-Hello typing-sig,
+Hello typing community,
 
 I’d like feedback on a possible typing construct tentatively called **`LiteralEnum`**, aimed at a common gap between `Enum` and `typing.Literal`.
 
@@ -50,16 +50,21 @@ Subclass extension is explicit (`extend=True`) to avoid accidental widening.
 
 **Status**
 
-* I have a working runtime implementation.
+* I have a small runtime prototype as a proof of concept (linked below); it does not attempt to solve the type-checker side yet
 * I’m interested in whether this direction seems:
 
   * useful enough to justify checker support, and
   * compatible with existing typing model assumptions.
 
-Draft PEP (early): <LINK>
-Runtime prototype: <LINK>
+Draft PEP (early): https://github.com/modularizer/LiteralEnum/blob/master/PEP.md
+Runtime prototype: https://github.com/modularizer/LiteralEnum/blob/master/src/typing_literalenum.py
 
-I’m not attached to the name or exact surface API—mostly looking to validate the *concept* and scope before going further.
+I’m not attached to the name or the source code, I'm looking to validate the *concept* and scope before going further.
+
+Primarily I wanted to ask:
+1. Do other people feel this pain point as much as me?
+2. Have you found yourself writing duplicate types: a (`Literal` plus an `Enum` or just a bare class with attributes)?
+
 
 Thanks for any feedback,
 Torin

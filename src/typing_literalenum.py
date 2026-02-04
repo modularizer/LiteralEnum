@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Iterator, Literal, Mapping, TypeVar
+from typing import Any, Iterator, Mapping, TypeVar
 from types import MappingProxyType
 
-
-# float not supported
 _LITERAL_TYPES = (str, int, bytes, bool, type(None))
 _MISSING = object()
-
 
 
 def _is_literal_type(value: object) -> bool:
@@ -20,11 +17,8 @@ def _strict_key(value: object) -> tuple[type, object]:
     A hashable identity for "strict equality" (type + value), preventing
     bool/int collisions (True vs 1) and similar edge cases.
     """
-    return (type(value), value)
+    return type(value), value
 
-
-
-E = TypeVar("E", bound="LiteralEnum")
 
 class LiteralEnumMeta(type):
     """
@@ -195,8 +189,6 @@ class LiteralEnumMeta(type):
 
 
 T = TypeVar("T")
-
-
 class LiteralEnum(metaclass=LiteralEnumMeta):
     """Base class for literal enums."""
     def __new__(cls, value: T) -> T: ...
