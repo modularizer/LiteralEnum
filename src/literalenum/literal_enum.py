@@ -78,6 +78,7 @@ class LiteralEnumMeta(type):
         cls._values_ = frozenset(val_set)
         cls._ordered_values_ = tuple(vals)
         cls.__args__ = cls._ordered_values_
+        cls.T_ = Literal[*cls._ordered_values_]
         return cls
 
     @property
@@ -170,9 +171,10 @@ class LiteralEnumMeta(type):
         members = ", ".join(f"{k}={v!r}" for k, v in cls._members_.items())
         return f"<LiteralEnum '{cls.__name__}' [{members}]>"
 
+
     @property
     def literal(cls) -> Any:
-        return Literal[*cls._ordered_values_]
+        return cls.T_
 
     @property
     def enum(cls) -> "Enum":
