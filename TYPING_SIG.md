@@ -39,7 +39,8 @@ At runtime:
 
 * `HttpMethod.GET == "GET"`
 * `list(HttpMethod) == ["GET", "POST", "DELETE"]`
-* `HttpMethod("GET")` validates and returns `"GET"`
+* `"GET" in HttpMethod` can be used to check if a string is valid
+* `HttpMethod("GET")` could optionally validate and return `"GET"` (acknowledging that callable classes usually construct instances)
 
 At type-check time, `HttpMethod` is equivalent to:
 
@@ -65,6 +66,7 @@ I’m not attached to the name or the source code, I'm looking to validate the *
 Questions for discussion:
 1. Do other people feel this pain point as much as me?
 2. Have you found yourself writing duplicate types: a (`Literal` plus an `Enum` or just a bare class with attributes)?
+3. Are there alternative designs that could provide a runtime namespace and an exhaustive type hint, without introducing a new core typing construct?
 
 
 Thanks for any feedback,
