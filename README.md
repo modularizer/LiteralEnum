@@ -20,8 +20,9 @@ This repo contains:
 
 ---
 ## Table of Contents
+- [Typing discussion](https://discuss.python.org/t/proposal-literalenum-runtime-literals-with-static-exhaustiveness/106000) with the Python community
 - [PEP.md](/PEP.md) is a draft PEP
-- [TYPING_SIG.md](/TYPING_SIG.md) is a draft email for a typing discussion
+- [TYPING_DISCUSSION.md](/TYPING_DISCUSSION.md) is shows drafts from the discussion
 - [src/typing_literalenum.py](/src/typing_literalenum.py) is a the draft of the core runtime functionality (proposed to become `typing.LiteralEnum` or `typing_extensions.LiteralEnum`)
 - [src/literalenum](/src/literalenum) is the full proposed PyPi module
 - [src/literalenum_sample](/src/literalenum_sample) shows a proposed usage example
