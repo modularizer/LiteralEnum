@@ -58,7 +58,7 @@ def _strict_key(value: object) -> tuple[type, object]:
 
     Python considers ``True == 1`` and ``False == 0``.  Using the type as part
     of the key prevents a ``bool`` member from colliding with an ``int``
-    member (or vice-versa) inside the value set.
+    member (or vice versa) inside the value set.
 
     Example::
 
