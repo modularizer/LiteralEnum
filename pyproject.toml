@@ -31,8 +31,8 @@ Issues = "https://github.com/modularizer/literalenum/issues"
 
 
 [project.scripts]
-lestub = "literalenum.stubgen:main"
-lestuba = "literalenum.stubgen:maina"
+lestub = "literalenum:lestub"
+lestuba = "literalenum:lestuba"
 
 
 [tool.hatch.build.targets.wheel]

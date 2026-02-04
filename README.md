@@ -25,7 +25,7 @@ This repo contains:
 - [TYPING_DISCUSSION.md](/TYPING_DISCUSSION.md) is shows drafts from the discussion
 - [src/typing_literalenum.py](/src/typing_literalenum.py) is a the draft of the core runtime functionality (proposed to become `typing.LiteralEnum` or `typing_extensions.LiteralEnum`)
 - [src/literalenum](/src/literalenum) is the full proposed PyPi module
-- [src/literalenum_sample](/src/literalenum_sample) shows a proposed usage example
+- [src/literalenum_sample](/literalenum_samples) shows a proposed usage example
 
 ---
 

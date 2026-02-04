@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from typing import Literal
 
 
-def model_from_literal_enum(
+def base_model(
     enum_cls: type,
     *,
     model_name: str | None = None,
@@ -13,10 +14,7 @@ def model_from_literal_enum(
     Create a pydantic BaseModel with a single field that validates against enum_cls.literal.
     """
     from pydantic import BaseModel, create_model, Field
-    if not hasattr(enum_cls, "literal"):
-        raise TypeError("enum_cls must have a .literal (typing.Literal[...]) property")
-
-    ann = enum_cls.runtime_literal  # <-- Literal["GET","POST",...]
+    ann = Literal[*enum_cls.values()]  # <-- Literal["GET","POST",...]
     default = Field(..., description=description) if description else ...
 
     return create_model(

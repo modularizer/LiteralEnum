@@ -5,7 +5,8 @@ from typing import Any, Dict, List
 JsonSchema = Dict[str, Any]
 
 
-def literal_enum_schema(
+
+def json_schema(
     enum_cls: type,
     *,
     title: str | None = None,

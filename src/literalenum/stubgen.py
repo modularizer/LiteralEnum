@@ -68,6 +68,7 @@ class EnumInfo:
     qualname: str
     bases: tuple[type, ...]
     members: dict[str, Any]  # name -> value (from runtime mapping)
+    call_to_validate: bool = False
 
 
 def _find_literal_enums(root: str) -> list[EnumInfo]:
@@ -90,6 +91,7 @@ def _find_literal_enums(root: str) -> list[EnumInfo]:
                         qualname=f"{obj.__module__}.{obj.__name__}",
                         bases=getattr(obj, "__bases__", ()),
                         members=members,
+                        call_to_validate=getattr(obj, "_call_to_validate_", False),
                     )
                 )
     return infos
@@ -149,15 +151,48 @@ def _render_enum_blocks(enums: list[EnumInfo]) -> str:
         out.append(f"    values: ClassVar[Iterable[{alias}]]\n")
         out.append(f"    mapping: ClassVar[dict[str, {alias}]]\n\n")
 
-        out.append("    @overload\n")
-        out.append(f"    def __new__(cls, value: {alias}) -> {alias}: ...\n")
-        out.append("    @overload\n")
-        out.append(f"    def __new__(cls, value: object) -> {alias}: ...\n\n")
+        if e.call_to_validate:
+            out.append("    @overload\n")
+            out.append(f"    def __new__(cls, value: {alias}) -> {alias}: ...\n")
+            out.append("    @overload\n")
+            out.append(f"    def __new__(cls, value: object) -> {alias}: ...\n\n")
+        else:
+            out.append(f"    def __new__(cls, value: Never) -> NoReturn: ...\n\n")
 
         out.append("    @classmethod\n")
         out.append(f"    def is_member(cls, value: object) -> TypeGuard[{alias}]: ...\n\n")
 
     return "".join(out)
+
+
+def stub_for(literalenum_cls: type) -> str:
+    """Return a stub string for a single LiteralEnum class.
+
+    Takes a LiteralEnum subclass at runtime and produces the ``.pyi``
+    content for it — a ``TypeAlias``, a class with ``Final`` members,
+    and typed helper signatures::
+
+        from literalenum import LiteralEnum
+        from literalenum.stubgen import stub_for
+
+        class HttpMethod(LiteralEnum):
+            GET = "GET"
+            POST = "POST"
+
+        print(stub_for(HttpMethod))
+
+    The output is a self-contained snippet (no import header).  Wrap it
+    with your own imports or use the CLI for full-module stubs.
+    """
+    info = EnumInfo(
+        module=getattr(literalenum_cls, "__module__", ""),
+        name=literalenum_cls.__name__,
+        qualname=f"{getattr(literalenum_cls, '__module__', '')}.{literalenum_cls.__name__}",
+        bases=getattr(literalenum_cls, "__bases__", ()),
+        members=dict(getattr(literalenum_cls, "mapping")),
+        call_to_validate=getattr(literalenum_cls, "_call_to_validate_", False),
+    )
+    return _render_enum_blocks([info])
 
 
 def _render_overlay_stub_module(enums: list[EnumInfo]) -> str:
@@ -167,7 +202,7 @@ def _render_overlay_stub_module(enums: list[EnumInfo]) -> str:
     """
     out: list[str] = []
     out.append("from __future__ import annotations\n")
-    out.append("from typing import ClassVar, Final, Literal, Iterable, TypeGuard, TypeAlias, overload\n")
+    out.append("from typing import ClassVar, Final, Literal, Iterable, Never, NoReturn, TypeGuard, TypeAlias, overload\n")
     out.append("from literalenum import LiteralEnum\n\n")
     out.append(_render_enum_blocks(enums))
     return "".join(out)
@@ -177,7 +212,7 @@ def _render_overlay_stub_module(enums: list[EnumInfo]) -> str:
 # Adjacent stubs (preserve module)
 # ----------------------------
 
-_TYPING_INJECT = "from typing import ClassVar, Final, Literal, Iterable, TypeGuard, TypeAlias, overload"
+_TYPING_INJECT = "from typing import ClassVar, Final, Literal, Iterable, Never, NoReturn, TypeGuard, TypeAlias, overload"
 _LITERALENUM_INJECT = "from literalenum import LiteralEnum"
 _FUTURE = "from __future__ import annotations"
 
@@ -349,7 +384,7 @@ def _parse_out_args(raw: list[str] | None) -> list[Path]:
     return uniq
 
 
-def main(adjacent: bool = False) -> int:
+def main(adjacent: bool = True) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("root", help="Root import (package or module) to scan, e.g. myapp")
     ap.add_argument(
@@ -358,13 +393,14 @@ def main(adjacent: bool = False) -> int:
         help="Overlay stub output directory (repeatable, or comma/semicolon-separated). Default: typings",
     )
     ap.add_argument(
-        "--adjacent",
+        "--no-adjacent",
         action="store_true",
-        help="Also write module.pyi next to module.py, preserving the rest of the module (useful for PyCharm).",
+        help="Skip writing module.pyi next to module.py (adjacent stubs are written by default).",
     )
     args = ap.parse_args()
 
     out_roots = _parse_out_args(args.out)
+    write_adjacent: bool = adjacent and not args.no_adjacent
     infos = _find_literal_enums(args.root)
 
     by_module: dict[str, list[EnumInfo]] = {}
@@ -374,7 +410,6 @@ def main(adjacent: bool = False) -> int:
     written = 0
     for module, enums in by_module.items():
         overlay_text = _render_overlay_stub_module(enums)
-        adjacent_text = _render_adjacent_preserving_stub(module, enums)
 
         # Overlay stubs for pyright stubPath
         for stub_root in out_roots:
@@ -383,8 +418,9 @@ def main(adjacent: bool = False) -> int:
             out_path.write_text(overlay_text, encoding="utf-8")
             written += 1
 
-        # Adjacent stubs for PyCharm
-        if adjacent or args.adjacent:
+        # Adjacent stubs (module.pyi next to module.py)
+        if write_adjacent:
+            adjacent_text = _render_adjacent_preserving_stub(module, enums)
             adj_path = _module_to_adjacent_stub_path(module)
             if adj_path is not None:
                 _ensure_parent(adj_path)
@@ -396,6 +432,7 @@ def main(adjacent: bool = False) -> int:
 
 
 def maina() -> int:
+    """Entry point that always writes adjacent stubs (kept for backwards compat)."""
     return main(adjacent=True)
 
 
