@@ -1,8 +1,4 @@
-Here’s a **ready-to-send** initial email. It’s intentionally short, concrete, and non-defensive, which tends to work best on typing-sig.
-
----
-
-**Subject:** Proposal: `LiteralEnum` — named runtime literals with static exhaustiveness
+**Subject:** Proposal: LiteralEnum — runtime literals with static exhaustiveness
 
 Hello typing-sig,
 
