@@ -5,7 +5,7 @@ class HttpMethod(LiteralEnum):
     POST = "POST"
     DELETE = "DELETE"
 
-class MoreHttpMethods(HttpMethod):
+class MoreHttpMethods(HttpMethod, extend=True):
     PATCH = "PATCH"
     PUT = "PUT"
     OPTIONS = "OPTIONS"
