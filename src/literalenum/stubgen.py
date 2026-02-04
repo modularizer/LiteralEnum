@@ -384,23 +384,24 @@ def _parse_out_args(raw: list[str] | None) -> list[Path]:
     return uniq
 
 
-def main(adjacent: bool = True) -> int:
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("root", help="Root import (package or module) to scan, e.g. myapp")
     ap.add_argument(
         "--out",
         action="append",
-        help="Overlay stub output directory (repeatable, or comma/semicolon-separated). Default: typings",
+        help="Also write overlay stubs to this directory (e.g. typings). "
+             "Repeatable or comma/semicolon-separated.",
     )
     ap.add_argument(
         "--no-adjacent",
         action="store_true",
-        help="Skip writing module.pyi next to module.py (adjacent stubs are written by default).",
+        help="Skip writing module.pyi next to module.py.",
     )
     args = ap.parse_args()
 
-    out_roots = _parse_out_args(args.out)
-    write_adjacent: bool = adjacent and not args.no_adjacent
+    write_adjacent: bool = not args.no_adjacent
+    out_roots: list[Path] = _parse_out_args(args.out) if args.out else []
     infos = _find_literal_enums(args.root)
 
     by_module: dict[str, list[EnumInfo]] = {}
@@ -409,16 +410,7 @@ def main(adjacent: bool = True) -> int:
 
     written = 0
     for module, enums in by_module.items():
-        overlay_text = _render_overlay_stub_module(enums)
-
-        # Overlay stubs for pyright stubPath
-        for stub_root in out_roots:
-            out_path = _module_to_stub_path(stub_root, module)
-            _ensure_parent(out_path)
-            out_path.write_text(overlay_text, encoding="utf-8")
-            written += 1
-
-        # Adjacent stubs (module.pyi next to module.py)
+        # Adjacent stubs (module.pyi next to module.py) — default
         if write_adjacent:
             adjacent_text = _render_adjacent_preserving_stub(module, enums)
             adj_path = _module_to_adjacent_stub_path(module)
@@ -427,13 +419,19 @@ def main(adjacent: bool = True) -> int:
                 adj_path.write_text(adjacent_text, encoding="utf-8")
                 written += 1
 
+        # Overlay stubs (e.g. typings/) — only when --out is given
+        if out_roots:
+            overlay_text = _render_overlay_stub_module(enums)
+            for stub_root in out_roots:
+                out_path = _module_to_stub_path(stub_root, module)
+                _ensure_parent(out_path)
+                out_path.write_text(overlay_text, encoding="utf-8")
+                written += 1
+
     print(f"Wrote {written} stub file(s) for {len(infos)} LiteralEnum subclasses.")
     return 0
 
 
-def maina() -> int:
-    """Entry point that always writes adjacent stubs (kept for backwards compat)."""
-    return main(adjacent=True)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 license = { text = "Unlicense" }
 
 authors = [
-  { name = "Modularizer", email = "modularizer@gmail.com" }
+  { name = "Torin Halsted", email = "modularizer@gmail.com" }
 ]
 
 keywords = [
@@ -32,7 +32,6 @@ Issues = "https://github.com/modularizer/literalenum/issues"
 
 [project.scripts]
 lestub = "literalenum:lestub"
-lestuba = "literalenum:lestuba"
 
 
 [tool.hatch.build.targets.wheel]
