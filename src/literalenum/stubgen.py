@@ -384,9 +384,50 @@ def _parse_out_args(raw: list[str] | None) -> list[Path]:
     return uniq
 
 
+def _resolve_root(raw: str) -> str:
+    """Resolve *raw* to a dotted module name importable by Python.
+
+    Accepts:
+      - A dotted import path:  ``myapp.models``
+      - A file path:           ``src/myapp/models.py``
+      - A directory path:      ``src/myapp/``
+
+    When a file or directory is given its parent is added to ``sys.path``
+    so that ``importlib`` can find it.
+    """
+    import sys
+
+    p = Path(raw)
+
+    # --- file path: /some/path/module.py ---
+    if p.is_file() and p.suffix == ".py":
+        parent = str(p.parent.resolve())
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
+        return p.stem if p.name != "__init__.py" else p.parent.name
+
+    # --- directory path: /some/path/package/ ---
+    if p.is_dir():
+        parent = str(p.parent.resolve())
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
+        return p.name
+
+    # --- dotted import name (ensure cwd is on path) ---
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+    return raw
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("root", help="Root import (package or module) to scan, e.g. myapp")
+    ap.add_argument(
+        "root",
+        help="Root to scan: a dotted import (myapp), "
+             "a .py file (src/myapp/models.py), "
+             "or a directory (src/myapp/).",
+    )
     ap.add_argument(
         "--out",
         action="append",
@@ -402,7 +443,8 @@ def main() -> int:
 
     write_adjacent: bool = not args.no_adjacent
     out_roots: list[Path] = _parse_out_args(args.out) if args.out else []
-    infos = _find_literal_enums(args.root)
+    root = _resolve_root(args.root)
+    infos = _find_literal_enums(root)
 
     by_module: dict[str, list[EnumInfo]] = {}
     for e in infos:

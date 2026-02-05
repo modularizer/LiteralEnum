@@ -1,3 +1,5 @@
+from sample_str_enum_solutions.a_strenum import HttpMethod
+
 # LiteralEnum
 
 **LiteralEnum** is an experiment/prototype for a proposed Python typing construct: 
@@ -46,9 +48,35 @@ This repo is currently set up as a package under `src/`.
 #source .venv/bin/activate
 pip install literalenum
 ```
-
+## Realistic Current Usage
 ```python
+from typing import Literal
 from literalenum import LiteralEnum
+
+HttpMethodT = Literal["GET", "POST", "DELETE"]
+class HttpMethod(LiteralEnum):
+    GET = "GET"
+    POST = "POST"
+    DELETE = "DELETE"
+
+def handle(method: HttpMethodT) -> None:
+    print(f"{method=}")
+
+handle("GET")          # this should type-check ✅ 
+handle(HttpMethod.GET) # this should type-check ✅ 
+handle("git")          # ❌ should be rejected by a type checker
+
+assert HttpMethod.GET == "GET"
+assert list(HttpMethod) == ["GET", "POST", "DELETE"]
+assert "GET" in HttpMethod
+print(HttpMethod.keys())
+print(HttpMethod.values())
+print(HttpMethod.mapping)
+```
+
+## Optimistic Future Usage
+```python
+from typing import LiteralEnum # NOT valid right now
 
 class HttpMethod(LiteralEnum):
     GET = "GET"
@@ -58,8 +86,8 @@ class HttpMethod(LiteralEnum):
 def handle(method: HttpMethod) -> None:
     print(f"{method=}")
 
-handle("GET")          # ✅ should type-check
-handle(HttpMethod.GET) # ✅ should type-check
+handle("GET")          # the GOAL is that this should type-check ✅ , in reality: it will not unless typecheckers change
+handle(HttpMethod.GET) # the GOAL is that this should type-check ✅ , in reality: it will not unless typecheckers change
 handle("git")          # ❌ should be rejected by a type checker
 
 assert HttpMethod.GET == "GET"
