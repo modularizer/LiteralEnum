@@ -1,5 +1,3 @@
-from sample_str_enum_solutions.a_strenum import HttpMethod
-
 # LiteralEnum
 
 **LiteralEnum** is an experiment/prototype for a proposed Python typing construct: 
