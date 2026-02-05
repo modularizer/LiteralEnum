@@ -609,6 +609,62 @@ class LiteralEnumMeta(type):
         """
         return validate_is_member(cls, x)
 
+    # ---- Testing utilities ----
+
+    def matches_enum(cls, enum_cls: type) -> bool:
+        """Check whether this LiteralEnum has exactly the same values as *enum_cls*.
+
+        Compares the set of unique values in this LiteralEnum against the
+        ``.value`` of every member in the given ``enum.Enum`` (or subclass).
+        Useful in test suites to assert two parallel definitions stay in sync::
+
+            import enum
+
+            class Color(enum.StrEnum):
+                RED = "red"
+                GREEN = "green"
+
+            class ColorLE(LiteralEnum):
+                RED = "red"
+                GREEN = "green"
+
+            assert ColorLE.matches_enum(Color)
+
+        Returns:
+            ``True`` if the value sets are identical.
+        """
+        try:
+            enum_values = {m.value for m in enum_cls}
+        except TypeError:
+            return False
+        return set(cls._ordered_values_) == enum_values
+
+    def matches_literal(cls, literal_type: Any) -> bool:
+        """Check whether this LiteralEnum has exactly the same values as *literal_type*.
+
+        Extracts the arguments from a ``typing.Literal[...]`` and compares
+        them against this LiteralEnum's unique values.  Useful in test suites
+        to assert a Literal type alias stays in sync with a LiteralEnum::
+
+            from typing import Literal
+
+            ColorLiteral = Literal["red", "green"]
+
+            class Color(LiteralEnum):
+                RED = "red"
+                GREEN = "green"
+
+            assert Color.matches_literal(ColorLiteral)
+
+        Returns:
+            ``True`` if the value sets are identical.
+        """
+        from typing import get_args
+        args = get_args(literal_type)
+        if not args:
+            return False
+        return set(cls._ordered_values_) == set(args)
+
 
 # ---------------------------------------------------------------------------
 # Base class

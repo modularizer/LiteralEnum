@@ -630,6 +630,103 @@ class TestAnd:
 
 
 # ===================================================================
+# matches_enum / matches_literal
+# ===================================================================
+
+class TestMatchesEnum:
+    def test_matches_identical(self):
+        import enum
+
+        class E(enum.Enum):
+            GET = "GET"
+            POST = "POST"
+            DELETE = "DELETE"
+
+        assert HttpMethod.matches_enum(E) is True
+
+    def test_matches_strenum(self):
+        import enum
+
+        class E(enum.StrEnum):
+            GET = "GET"
+            POST = "POST"
+            DELETE = "DELETE"
+
+        assert HttpMethod.matches_enum(E) is True
+
+    def test_matches_intenum(self):
+        import enum
+
+        class E(enum.IntEnum):
+            OK = 200
+            NOT_FOUND = 404
+
+        assert StatusCode.matches_enum(E) is True
+
+    def test_mismatch_extra_in_enum(self):
+        import enum
+
+        class E(enum.Enum):
+            GET = "GET"
+            POST = "POST"
+            DELETE = "DELETE"
+            PATCH = "PATCH"
+
+        assert HttpMethod.matches_enum(E) is False
+
+    def test_mismatch_missing_in_enum(self):
+        import enum
+
+        class E(enum.Enum):
+            GET = "GET"
+
+        assert HttpMethod.matches_enum(E) is False
+
+    def test_mismatch_different_values(self):
+        import enum
+
+        class E(enum.Enum):
+            GET = "get"
+            POST = "post"
+            DELETE = "delete"
+
+        assert HttpMethod.matches_enum(E) is False
+
+    def test_non_enum_returns_false(self):
+        assert HttpMethod.matches_enum(str) is False
+
+
+class TestMatchesLiteral:
+    def test_matches_identical(self):
+        from typing import Literal
+        assert HttpMethod.matches_literal(Literal["GET", "POST", "DELETE"]) is True
+
+    def test_matches_int_literal(self):
+        from typing import Literal
+        assert StatusCode.matches_literal(Literal[200, 404]) is True
+
+    def test_mismatch_extra(self):
+        from typing import Literal
+        assert HttpMethod.matches_literal(Literal["GET", "POST", "DELETE", "PATCH"]) is False
+
+    def test_mismatch_missing(self):
+        from typing import Literal
+        assert HttpMethod.matches_literal(Literal["GET"]) is False
+
+    def test_order_independent(self):
+        from typing import Literal
+        assert HttpMethod.matches_literal(Literal["DELETE", "GET", "POST"]) is True
+
+    def test_non_literal_returns_false(self):
+        assert HttpMethod.matches_literal(str) is False
+
+    def test_matches_type_alias(self):
+        from typing import Literal
+        MyType = Literal["GET", "POST", "DELETE"]
+        assert HttpMethod.matches_literal(MyType) is True
+
+
+# ===================================================================
 # Edge cases
 # ===================================================================
 
