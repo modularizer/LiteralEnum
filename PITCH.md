@@ -1,4 +1,8 @@
+from tests.test_typing_literalenum import HttpMethod
+
 # What if one object could be a namespace AND a typehint?
+
+![img.png](img.png)
 
 ```python
 # Wouldn't it be nice if this worked?
@@ -30,3 +34,4 @@ One definition. Plain raw literals at runtime. Exhaustive checking at type-check
 - A realistic runtime version is available at `pip install literalenum` (but is not as good as advertised above)
 - Support in the [Python Community Discussion](https://discuss.python.org/t/proposal-literalenum-runtime-literals-with-static-exhaustiveness/106000/15) 
   would be needed to have a shot at a PEP that could improve Python
+
