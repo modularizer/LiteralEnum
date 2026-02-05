@@ -370,6 +370,48 @@ class LiteralEnumMeta(type):
             for names in cls._value_names_.values()
         })
 
+    @property
+    def name_mapping(cls) -> Mapping[Any, str]:
+        """A read-only ``{value: canonical_name}`` inverse mapping.
+
+        Each unique value maps to its first-declared (canonical) name::
+
+            class Method(LiteralEnum):
+                GET = "GET"
+                get = "GET"       # alias
+
+            Method.name_mapping   # {"GET": "GET"}
+
+        See also :attr:`names_mapping` for all names including aliases.
+        """
+        return MappingProxyType({
+            v: names[0]
+            for v, names in zip(cls._ordered_values_, cls._value_names_.values())
+        })
+
+    @property
+    def names_by_value(cls) -> Mapping[Any, str]:
+        return cls.name_mapping
+
+
+    @property
+    def names_mapping(cls) -> Mapping[Any, tuple[str, ...]]:
+        """A read-only ``{value: (name, ...)}`` inverse mapping.
+
+        Each unique value maps to a tuple of all its declared names
+        (canonical first, then aliases)::
+
+            class Method(LiteralEnum):
+                GET = "GET"
+                get = "GET"       # alias
+
+            Method.names_mapping  # {"GET": ("GET", "get")}
+        """
+        return MappingProxyType({
+            v: names
+            for v, names in zip(cls._ordered_values_, cls._value_names_.values())
+        })
+
     def keys(cls) -> tuple[str, ...]:
         """Return canonical member names in definition order (aliases excluded)."""
         return tuple(

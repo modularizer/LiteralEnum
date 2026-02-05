@@ -250,6 +250,36 @@ class TestMappings:
         assert isinstance(HttpMethod.__members__, MappingProxyType)
         assert dict(HttpMethod.__members__) == dict(HttpMethod.mapping)
 
+    def test_name_mapping(self):
+        assert isinstance(HttpMethod.name_mapping, MappingProxyType)
+        assert dict(HttpMethod.name_mapping) == {
+            "GET": "GET", "POST": "POST", "DELETE": "DELETE",
+        }
+
+    def test_name_mapping_returns_canonical(self):
+        assert dict(WithAliases.name_mapping) == {"GET": "GET", "POST": "POST"}
+
+    def test_name_mapping_int(self):
+        assert dict(StatusCode.name_mapping) == {200: "OK", 404: "NOT_FOUND"}
+
+    def test_names_mapping(self):
+        assert isinstance(HttpMethod.names_mapping, MappingProxyType)
+        assert dict(HttpMethod.names_mapping) == {
+            "GET": ("GET",), "POST": ("POST",), "DELETE": ("DELETE",),
+        }
+
+    def test_names_mapping_with_aliases(self):
+        assert dict(WithAliases.names_mapping) == {
+            "GET": ("GET", "get"),
+            "POST": ("POST", "post"),
+        }
+
+    def test_name_mapping_empty(self):
+        assert dict(Empty.name_mapping) == {}
+
+    def test_names_mapping_empty(self):
+        assert dict(Empty.names_mapping) == {}
+
 
 # ===================================================================
 # Aliases
