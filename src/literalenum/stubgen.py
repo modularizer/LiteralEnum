@@ -129,10 +129,10 @@ def _render_enum_blocks(enums: list[EnumInfo]) -> str:
 
     out: list[str] = []
     for e in sorted(enums, key=lambda x: x.name):
-        alias = f"{e.name}T"
+        T = f"{e.name}T"
         values = list(e.members.values())
         literal_union = ", ".join(_py_literal(v) for v in values) if values else ""
-        out.append(f"{alias}: TypeAlias = Literal[{literal_union}]\n\n")
+        out.append(f"{T}: TypeAlias = Literal[{literal_union}]\n\n")
 
         base = _enum_base_decl(e)
         inherited = _inherited_member_names(e)
@@ -141,26 +141,61 @@ def _render_enum_blocks(enums: list[EnumInfo]) -> str:
         own_members = [(k, v) for (k, v) in e.members.items() if k not in inherited]
 
         out.append(f"class {e.name}({base}):\n")
-        out.append(f"    T_ = Literal[{literal_union}]\n")
-        if not own_members:
-            out.append("    ...\n")
-        else:
+
+        # -- Members --
+        if own_members:
             for k, v in own_members:
                 out.append(f"    {k}: Final[Literal[{_py_literal(v)}]] = {_py_literal(v)}\n")
+        else:
+            out.append("    ...\n")
+        out.append("\n")
 
-        out.append(f"    values: ClassVar[Iterable[{alias}]]\n")
-        out.append(f"    mapping: ClassVar[dict[str, {alias}]]\n\n")
+        # -- Mappings --
+        out.append(f"    mapping: ClassVar[MappingProxyType[str, {T}]]\n")
+        out.append(f"    unique_mapping: ClassVar[MappingProxyType[str, {T}]]\n")
+        out.append(f"    __members__: ClassVar[MappingProxyType[str, {T}]]\n\n")
 
+        # -- Dict-like --
+        out.append("    @classmethod\n")
+        out.append("    def keys(cls) -> tuple[str, ...]: ...\n")
+        out.append("    @classmethod\n")
+        out.append(f"    def values(cls) -> tuple[{T}, ...]: ...\n")
+        out.append("    @classmethod\n")
+        out.append(f"    def items(cls) -> tuple[tuple[str, {T}], ...]: ...\n\n")
+
+        # -- Alias introspection --
+        out.append("    @classmethod\n")
+        out.append(f"    def names(cls, value: {T}) -> tuple[str, ...]: ...\n")
+        out.append("    @classmethod\n")
+        out.append(f"    def canonical_name(cls, value: {T}) -> str: ...\n\n")
+
+        # -- Validation --
+        out.append("    @classmethod\n")
+        out.append(f"    def is_valid(cls, x: object) -> TypeGuard[{T}]: ...\n")
+        out.append("    @classmethod\n")
+        out.append(f"    def validate(cls, x: object) -> {T}: ...\n\n")
+
+        # -- Container protocol --
+        out.append(f"    def __iter__(cls) -> Iterator[{T}]: ...\n")
+        out.append(f"    def __reversed__(cls) -> Iterator[{T}]: ...\n")
+        out.append("    def __len__(cls) -> int: ...\n")
+        out.append("    def __bool__(cls) -> bool: ...\n")
+        out.append("    def __contains__(cls, value: object) -> bool: ...\n")
+        out.append(f"    def __getitem__(cls, key: str) -> {T}: ...\n")
+        out.append("    def __repr__(cls) -> str: ...\n\n")
+
+        # -- Operators --
+        out.append("    def __or__(cls, other: LiteralEnumMeta) -> LiteralEnumMeta: ...\n")
+        out.append("    def __and__(cls, other: LiteralEnumMeta) -> LiteralEnumMeta: ...\n\n")
+
+        # -- Constructor --
         if e.call_to_validate:
             out.append("    @overload\n")
-            out.append(f"    def __new__(cls, value: {alias}) -> {alias}: ...\n")
+            out.append(f"    def __new__(cls, value: {T}) -> {T}: ...\n")
             out.append("    @overload\n")
-            out.append(f"    def __new__(cls, value: object) -> {alias}: ...\n\n")
+            out.append(f"    def __new__(cls, value: object) -> {T}: ...\n\n")
         else:
             out.append(f"    def __new__(cls, value: Never) -> NoReturn: ...\n\n")
-
-        out.append("    @classmethod\n")
-        out.append(f"    def is_member(cls, value: object) -> TypeGuard[{alias}]: ...\n\n")
 
     return "".join(out)
 
@@ -202,8 +237,9 @@ def _render_overlay_stub_module(enums: list[EnumInfo]) -> str:
     """
     out: list[str] = []
     out.append("from __future__ import annotations\n")
-    out.append("from typing import ClassVar, Final, Literal, Iterable, Never, NoReturn, TypeGuard, TypeAlias, overload\n")
-    out.append("from literalenum import LiteralEnum\n\n")
+    out.append("from types import MappingProxyType\n")
+    out.append("from typing import ClassVar, Final, Iterator, Literal, Never, NoReturn, TypeAlias, TypeGuard, overload\n")
+    out.append("from literalenum import LiteralEnum, LiteralEnumMeta\n\n")
     out.append(_render_enum_blocks(enums))
     return "".join(out)
 
@@ -212,8 +248,9 @@ def _render_overlay_stub_module(enums: list[EnumInfo]) -> str:
 # Adjacent stubs (preserve module)
 # ----------------------------
 
-_TYPING_INJECT = "from typing import ClassVar, Final, Literal, Iterable, Never, NoReturn, TypeGuard, TypeAlias, overload"
-_LITERALENUM_INJECT = "from literalenum import LiteralEnum"
+_TYPES_INJECT = "from types import MappingProxyType"
+_TYPING_INJECT = "from typing import ClassVar, Final, Iterator, Literal, Never, NoReturn, TypeAlias, TypeGuard, overload"
+_LITERALENUM_INJECT = "from literalenum import LiteralEnum, LiteralEnumMeta"
 _FUTURE = "from __future__ import annotations"
 
 
@@ -250,10 +287,12 @@ def _normalize_imports(import_lines: list[str]) -> list[str]:
             continue
         if s.startswith("from literalenum import") and "LiteralEnum" in s:
             continue
+        if s.startswith("from types import") and "MappingProxyType" in s:
+            continue
         if s.startswith("from typing import"):
             # drop any typing line that imports our injected symbols
             # (simple heuristic: if it mentions any of them, drop it)
-            symbols = ["ClassVar", "Final", "Literal", "Iterable", "TypeGuard", "overload"]
+            symbols = ["ClassVar", "Final", "Iterator", "Literal", "TypeGuard", "overload"]
             if any(sym in s for sym in symbols):
                 continue
         out.append(s)
@@ -319,6 +358,7 @@ def _render_adjacent_preserving_stub(module: str, enums: list[EnumInfo]) -> str:
         out.append("\n")
 
     # Inject what enum blocks need, exactly once
+    out.append(_TYPES_INJECT + "\n")
     out.append(_TYPING_INJECT + "\n")
     out.append(_LITERALENUM_INJECT + "\n\n")
 
