@@ -2,15 +2,43 @@
     <id>com.literalenum.pycharm</id>
     <name>LiteralEnum Support</name>
     <version>0.1.0</version>
-    <vendor>LiteralEnum</vendor>
+
+    <vendor email="modularizer@gmail.com" url="https://github.com/modularizer/literalenum">
+        LiteralEnum
+    </vendor>
+
+    <idea-version since-build="232"/>
 
     <description><![CDATA[
-    Makes LiteralEnum subclasses dual-natured in PyCharm:
-    <ul>
-        <li>In type annotations: treated as Literal["GET"] | Literal["POST"] | ...</li>
-        <li>In value positions: treated as a normal class with attributes, methods, iteration</li>
-    </ul>
-    ]]></description>
+Static typing support for <code>LiteralEnum</code> in Python.<br/><br/>
+
+<b>LiteralEnum Support for PyCharm</b><br/>
+Adds static typing support for <code>LiteralEnum</code> classes.
+
+This plugin improves Python type checking by treating LiteralEnum as:
+<ul>
+  <li><b>Type position:</b> an exhaustive <code>Literal[...]</code> union</li>
+  <li><b>Value position:</b> a normal runtime class (attributes, iteration, validation)</li>
+</ul>
+
+Useful for:
+<ul>
+  <li>HTTP methods, event names, protocol tokens</li>
+  <li>APIs that accept string literals but need exhaustiveness</li>
+  <li>Projects using the <code>literalenum</code> package</li>
+</ul>
+
+Project: https://github.com/modularizer/literalenum
+]]></description>
+    <url>https://github.com/modularizer/literalenum</url>
+
+    <change-notes><![CDATA[
+Initial release (0.1.0).
+<ul>
+  <li>LiteralEnum type inference and inspections</li>
+</ul>
+]]></change-notes>
+
 
     <depends>com.intellij.modules.python</depends>
     <depends optional="true" config-file="python-common.xml">PythonCore</depends>
@@ -28,5 +56,4 @@
         <lang.inspectionSuppressor language="Python"
                  implementationClass="com.literalenum.pycharm.LogToolIdSuppressor"/>
     </extensions>
-
 </idea-plugin>

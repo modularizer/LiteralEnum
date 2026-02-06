@@ -6,6 +6,8 @@ an **exhaustive `Literal[...]` union**.
 
 > Status: Prototype / exploration for typing-sig discussion. Not an accepted PEP.
 
+--- 
+
 ## Why this exists
 In typed Python today you often have to pick one:
 
@@ -16,10 +18,13 @@ So people duplicate values or accept `str` and validate at runtime.
 
 LiteralEnum aims to make the common case a single source of truth.
 
-It’s designed for “protocol token” style values—HTTP methods, event names, command identifiers, config keys—where you want:
-- **plain literals at runtime** (e.g. `"GET"`),
-- **namespaced constants** (e.g. `HttpMethod.GET`), and
-- **static exhaustiveness checking** (i.e. the type is equivalent to `Literal["GET", "POST", ...]`).
+---
+
+## What is it?
+1. A runtime python package provided with `pip install literalenum`
+2. A mypy plugin for correctly type checking the new construct in a way that matches the runtime behavior
+3. A Pycharm Plugin for correct syntax highlighting to match the runtime behavior
+4. A discussion in hopes of creating support for a PEP to help solve these painpoints in the Python language, such that type checker plugins are not needed
 
 ---
 ## Table of Contents
@@ -46,35 +51,10 @@ This repo is currently set up as a package under `src/`.
 #source .venv/bin/activate
 pip install literalenum
 ```
-## Realistic Current Usage
+## Usage
+The following is valid at runtime, but will not pass static type-checking correctly unless you use a provided plugin.
 ```python
-from typing import Literal
 from literalenum import LiteralEnum
-
-HttpMethodT = Literal["GET", "POST", "DELETE"]
-class HttpMethod(LiteralEnum):
-    GET = "GET"
-    POST = "POST"
-    DELETE = "DELETE"
-
-def handle(method: HttpMethodT) -> None:
-    print(f"{method=}")
-
-handle("GET")          # this should type-check ✅ 
-handle(HttpMethod.GET) # this should type-check ✅ 
-handle("git")          # ❌ should be rejected by a type checker
-
-assert HttpMethod.GET == "GET"
-assert list(HttpMethod) == ["GET", "POST", "DELETE"]
-assert "GET" in HttpMethod
-print(HttpMethod.keys())
-print(HttpMethod.values())
-print(HttpMethod.mapping)
-```
-
-## Optimistic Future Usage
-```python
-from typing import LiteralEnum # NOT valid right now
 
 class HttpMethod(LiteralEnum):
     GET = "GET"
@@ -95,6 +75,7 @@ print(HttpMethod.keys())
 print(HttpMethod.values())
 print(HttpMethod.mapping)
 ```
+
 
 ---
 
