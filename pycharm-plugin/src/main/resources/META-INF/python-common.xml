@@ -1,0 +1,7 @@
+<idea-plugin>
+    <extensions defaultExtensionNs="Pythonid">
+        <typeProvider implementation="com.literalenum.pycharm.LiteralEnumTypeProvider"/>
+        <pyClassMembersProvider implementation="com.literalenum.pycharm.LiteralEnumMembersProvider"/>
+        <typeCheckerExtension implementation="com.literalenum.pycharm.LiteralEnumTypeCheckerExtension"/>
+    </extensions>
+</idea-plugin>

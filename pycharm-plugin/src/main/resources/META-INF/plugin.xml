@@ -1,0 +1,32 @@
+<idea-plugin>
+    <id>com.literalenum.pycharm</id>
+    <name>LiteralEnum Support</name>
+    <version>0.1.0</version>
+    <vendor>LiteralEnum</vendor>
+
+    <description><![CDATA[
+    Makes LiteralEnum subclasses dual-natured in PyCharm:
+    <ul>
+        <li>In type annotations: treated as Literal["GET"] | Literal["POST"] | ...</li>
+        <li>In value positions: treated as a normal class with attributes, methods, iteration</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.python</depends>
+    <depends optional="true" config-file="python-common.xml">PythonCore</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <localInspection language="Python"
+                 shortName="LiteralEnumCallArgumentInspection"
+                 displayName="LiteralEnum call argument typing"
+                 groupName="Python"
+                 enabledByDefault="true"
+                 implementationClass="com.literalenum.pycharm.LiteralEnumCallArgumentInspection"/>
+
+        <lang.inspectionSuppressor language="Python"
+                 implementationClass="com.literalenum.pycharm.LiteralEnumTypeCheckerSuppressor"/>
+        <lang.inspectionSuppressor language="Python"
+                 implementationClass="com.literalenum.pycharm.LogToolIdSuppressor"/>
+    </extensions>
+
+</idea-plugin>

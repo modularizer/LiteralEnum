@@ -90,4 +90,8 @@ class LiteralEnumTypeCheckerExtension : PyTypeCheckerExtension {
 
         return Optional.empty()
     }
+
+
+
+
 }
