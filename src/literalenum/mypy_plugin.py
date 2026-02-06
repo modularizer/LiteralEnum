@@ -156,7 +156,8 @@ class LiteralEnumPlugin(Plugin):
     # ── hook registration ─────────────────────────────────────────────
 
     def _log(self, msg: str) -> None:
-        print(f"[literalenum] {msg}", file=sys.stderr)
+        # print(f"[literalenum] {msg}", file=sys.stderr)
+        pass
 
     def get_base_class_hook(
         self,
