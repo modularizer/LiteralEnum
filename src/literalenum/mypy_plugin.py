@@ -19,6 +19,8 @@ Enable in mypy.ini / pyproject.toml:
 
 from __future__ import annotations
 
+import sys
+print("[literalenum] PLUGIN MODULE IMPORTED", file=sys.stderr)
 from typing import Any, Callable
 
 from mypy.nodes import (
@@ -59,6 +61,8 @@ METADATA_KEY = "literalenum"
 _BASE_FULLNAMES: frozenset[str] = frozenset(
     {
         "literalenum.LiteralEnum",
+        "literalenum.literal_enum.LiteralEnum",
+        "typing_literalenum.LiteralEnum",
     }
 )
 
@@ -151,6 +155,9 @@ class LiteralEnumPlugin(Plugin):
 
     # ── hook registration ─────────────────────────────────────────────
 
+    def _log(self, msg: str) -> None:
+        print(f"[literalenum] {msg}", file=sys.stderr)
+
     def get_base_class_hook(
         self,
         fullname: str,
@@ -159,32 +166,51 @@ class LiteralEnumPlugin(Plugin):
             return self._on_class_def
         return None
 
+    def _is_literalenum_typeinfo(self, info: TypeInfo) -> bool:
+        # If we've already tagged it, great.
+        if METADATA_KEY in info.metadata:
+            return True
+        # Otherwise, check MRO for the base class.
+        return any(base.fullname in _BASE_FULLNAMES for base in info.mro[1:])
+
     def get_type_analyze_hook(
-        self,
-        fullname: str,
+            self, fullname: str
     ) -> Callable[[AnalyzeTypeContext], Type] | None:
-        members = self._resolve(fullname)
-        if members is not None:
+        self._log(f"get_type_analyze_hook asked about: {fullname}")
+        sym = self.lookup_fully_qualified(fullname)
+        if not sym or not isinstance(sym.node, TypeInfo):
+            return None
+        if not self._is_literalenum_typeinfo(sym.node):
+            return None
 
-            def callback(ctx: AnalyzeTypeContext) -> Type:
-                return _make_union(members, ctx.api.named_type)
+        def callback(ctx: AnalyzeTypeContext) -> Type:
+            self._log(f"function_hook: {fullname}")
+            members = self._resolve(fullname)
+            if members is None:
+                return ctx.type  # fall back to whatever mypy inferred
+            return _make_union(members, ctx.api.named_type)
 
-            return callback
-        return None
+        return callback
 
     def get_function_hook(
-        self,
-        fullname: str,
+            self, fullname: str
     ) -> Callable[[FunctionContext], Type] | None:
-        # Constructor calls: mypy calls with the class fullname
-        members = self._resolve(fullname)
-        if members is not None:
+        self._log(f"get_type_analyze_hook asked about: {fullname}")
+        sym = self.lookup_fully_qualified(fullname)
+        if not sym or not isinstance(sym.node, TypeInfo):
+            return None
+        if not self._is_literalenum_typeinfo(sym.node):
+            return None
 
-            def callback(ctx: FunctionContext) -> Type:
-                return self._on_constructor(fullname, members, ctx)
+        def callback(ctx: FunctionContext) -> Type:
+            self._log(f"type_analyze: {fullname}")
+            members = self._resolve(fullname)
+            if members is None:
+                return ctx.default_return_type
+            return self._on_constructor(fullname, members, ctx)
 
-            return callback
-        return None
+        return callback
+
 
     # ── member resolution (cache + metadata fallback) ─────────────────
 
@@ -206,6 +232,7 @@ class LiteralEnumPlugin(Plugin):
     # ── hook 1: base class — process class definition ─────────────────
 
     def _on_class_def(self, ctx: ClassDefContext) -> None:
+        self._log(f"class_def: {ctx.cls.info.fullname}")
         info = ctx.cls.info
 
         # Inherit parent members (walk MRO)

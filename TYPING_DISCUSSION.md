@@ -199,3 +199,51 @@ Separately, just to avoid confusion about intent:
 
 Happy to adapt or discard the implementation entirely if the group converges on a better API shape.
 
+---
+
+
+Great question! I'm eager to here what others have to say, but here's why namespacing is important to me:
+
+Here's why I like namespacing:
+- It makes code more resilient: easier to refactor, harder to make typos, easier to find references and usages in DEs, and possible to "jump to declaration" in IDEs, where you might find documentation and relevant code.
+
+Here's why I don't want to reject raw literals and don't want to require or even use StrEnum:
+- You might not be able to or want to change company culture overnight to do a hard rollout or refactor to immediately only use StrEnums
+- Serialization:
+  - it is great that StrEnum is serializable, by when you do serialize it (to json for instance), it looses its class and is not round-trip deserializable back to the same type unless you put in extra work to try to guess when you should cast the variable
+  - therefore, there may be cases when I want to support incoming values just being the raw literal and not the StrEnum, and I do not want my typehint to lie
+- I NEVER want it to be a requirement that a value is a StrEnum
+  - a large amount of code uses `x.value` on `StrEnum` members, which raises errors on a raiw string
+  - if a variable is typehinted as `StrEnum` people will not think twice about doing `x.value` or `isinstance(x, StrEnum)`
+- casting is clunky. I don't think it looks great and more importantly I don't think it should be necessary
+
+
+
+
+Great question! I'm eager to here what others have to say, but just to explain the constraint I am running into:
+
+The core issue for me is that there are real cases where **I want both**:
+
+* acceptance of the *raw literal value* (e.g. `"GET"`), and
+* a *single, discoverable namespace* that defines the allowed set.
+
+Namespacing matters to me primarily as a **single source of truth**:
+
+* refactors and renames are safer
+* typos are harder
+* IDEs can jump to a definition that carries documentation and relevant source code
+* OpenAPI schemas and similar can reuse the same documentation and references for many spots
+* it’s easier to audit and reason about where a value set comes from
+
+At the same time, I don’t want to reject raw literals or require `StrEnum`, because that forces the type hints to lie in common situations:
+
+* **Serialization boundaries**: after JSON (or similar), values come back as raw strings. Requiring `StrEnum` means either a) eagerly casting everywhere, b) pretending the value is still an enum when it isn’t, or c) using union typehints of the StrEnum combined with a Literal type
+* **Soundness**: if a variable is typed as `StrEnum`, people will naturally do `x.value` or `isinstance(x, StrEnum)`, which breaks immediately if the value is actually just a string.
+* **Ergonomics**: forcing explicit casts everywhere feels like overhead that exists only to satisfy the type system.
+
+So the goal isn’t “namespace *instead of* literals” or “literals *instead of* enums”, but a way to say:
+
+“These specific literal values are valid, and *this* object is the authoritative namespace for them — without requiring the runtime value to be an enum instance.”
+
+That combination is what I currently can’t express in Python typing, even with stubs.
+
