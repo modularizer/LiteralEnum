@@ -191,6 +191,47 @@ fun extractLiteralFromExpression(expr: PyExpression): Pair<Any?, String>? {
 }
 
 /**
+ * Get a boolean keyword argument from the class definition.
+ * e.g. `class Colors(LiteralEnum, call_to_validate=True):` → getClassKeywordBool(cls, "call_to_validate") = true
+ * Returns null if the keyword is absent.
+ */
+fun getClassKeywordBool(pyClass: PyClass, keyword: String): Boolean? {
+    val argList = pyClass.superClassExpressionList ?: return null
+    for (arg in argList.arguments) {
+        if (arg is PyKeywordArgument && arg.keyword == keyword) {
+            val value = arg.valueExpression
+            if (value is PyBoolLiteralExpression) return value.value
+            return null
+        }
+    }
+    return null
+}
+
+fun hasCallToValidate(pyClass: PyClass): Boolean = getClassKeywordBool(pyClass, "call_to_validate") == true
+fun hasExtend(pyClass: PyClass): Boolean = getClassKeywordBool(pyClass, "extend") == true
+
+/**
+ * Resolve the effective `allow_aliases` setting for [pyClass].
+ * Walks up the MRO: explicit `allow_aliases=False` on any ancestor wins.
+ * Default is True (aliases allowed).
+ */
+fun effectiveAllowAliases(pyClass: PyClass, context: TypeEvalContext): Boolean {
+    // Check own keyword first
+    val own = getClassKeywordBool(pyClass, "allow_aliases")
+    if (own != null) return own
+
+    // Walk ancestors
+    for (ancestor in pyClass.getAncestorClasses(context)) {
+        val qName = ancestor.qualifiedName
+        if (qName != null && qName in LITERAL_ENUM_FQNS) continue
+        val ancestorVal = getClassKeywordBool(ancestor, "allow_aliases")
+        if (ancestorVal != null) return ancestorVal
+    }
+
+    return true // default: aliases allowed
+}
+
+/**
  * Determine whether [element] is inside a type annotation context.
  *
  * Covers: parameter annotations, return type annotations, variable annotations,
