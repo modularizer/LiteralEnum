@@ -221,6 +221,7 @@ fun effectiveAllowAliases(pyClass: PyClass, context: TypeEvalContext): Boolean {
     if (own != null) return own
 
     // Walk ancestors
+    // FIXME: this walk seems to fail, and misses allow_aliases=False on a parent
     for (ancestor in pyClass.getAncestorClasses(context)) {
         val qName = ancestor.qualifiedName
         if (qName != null && qName in LITERAL_ENUM_FQNS) continue

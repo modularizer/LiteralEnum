@@ -1,3 +1,5 @@
+from typing import Literal
+
 from literalenum import LiteralEnum
 from literalenum.samples.http import HttpMethod
 
@@ -96,11 +98,12 @@ class InheritedStrict(StrictColors, extend=True):
 # 7. Parameter type checking with another LiteralEnum
 # ============================================================
 
-def print_color(c: Colors) -> None:
+def print_color(c: Literal["PURPLE"] | Colors) -> None:
     print(f"{c=}")
 
 print_color("BLUE")         # OK — valid member
 print_color("RED")           # OK — valid member
+print_color("PURPLE")           # OK — valid member
 print_color("GREEN")         # ERROR — not a member of Colors
 print_color(Colors.BLUE)     # OK — resolves to Literal["BLUE"]
 
