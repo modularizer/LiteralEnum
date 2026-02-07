@@ -29,9 +29,16 @@ See the companion PEP draft for the full motivation and typing semantics.
 
 from __future__ import annotations
 
-from typing import Any, Iterator, Mapping, TypeVar, NoReturn, Never, TypeGuard
+import sys
 from types import MappingProxyType
 import inspect
+from typing import Any, Iterator, Mapping, TypeVar, NoReturn, TypeGuard
+
+if sys.version_info >= (3, 11):
+    from typing import Never
+else:
+    from typing_extensions import Never
+
 
 # ---------------------------------------------------------------------------
 # Allowed literal types — mirrors the set accepted by ``typing.Literal``
@@ -115,7 +122,7 @@ def _parse_ignore(ns: Mapping[str, Any]) -> set[str]:
 LE = TypeVar("LE", bound="LiteralEnum")
 
 
-def is_member(literalenum: type[LE], x: object) -> TypeGuard[LE]:
+def is_member(literalenum: "LiteralEnumMeta", x: object) -> TypeGuard["LiteralEnumMeta"]:
     """Check whether *x* is a valid member value of *literalenum*.
 
     Acts as a ``TypeGuard`` so that, after a successful check, a type
@@ -134,7 +141,7 @@ def is_member(literalenum: type[LE], x: object) -> TypeGuard[LE]:
     return x in literalenum
 
 
-def validate_is_member(literalenum: type[LE], x: object) -> LE:
+def validate_is_member(literalenum: "LiteralEnumMeta", x: object) -> "LiteralEnum":
     """Validate that *x* is a member of *literalenum*, or raise ``ValueError``.
 
     Unlike :func:`is_member`, this function raises on failure rather than
@@ -178,15 +185,13 @@ class LiteralEnumMeta(type):
     """
 
     # ---- Internal attributes set on every LiteralEnum subclass ----
-    #
-    # _members_:        dict[str, Any]                  — name -> value mapping (all names, including aliases)
-    # _ordered_values_: tuple[Any, ...]                 — unique values in first-seen order
-    # _value_keys_:     frozenset[tuple[type, object]]  — strict-key set for O(1) ``in``
-    # _value_names_:    dict[tuple[type, object], tuple[str, ...]]
-    #                                                   — strict-key -> declared names (first = canonical)
-    # _allow_aliases_:  bool                            — whether duplicate values are permitted
-    # _call_to_validate_: bool                          — whether __call__ validates instead of raising
-    # __members__:      MappingProxyType[str, Any]      — public read-only view (all names, including aliases)
+    _members_: dict[str, Any]
+    _ordered_values_: tuple[Any, ...]
+    _value_keys_: frozenset[tuple[type, object]]
+    _value_names_: dict[tuple[type, object], tuple[str, ...]]
+    _allow_aliases_: bool
+    _call_to_validate_: bool
+    __members__: MappingProxyType[str, Any]
 
     def __new__(
         mcls,
@@ -228,7 +233,7 @@ class LiteralEnumMeta(type):
         cls = super().__new__(mcls, name, bases, ns)
 
         # --- Identify LiteralEnum bases ---
-        literal_bases: list[type] = [b for b in bases if isinstance(b, LiteralEnumMeta)]
+        literal_bases: list[LiteralEnumMeta] = [b for b in bases if isinstance(b, LiteralEnumMeta)]
         is_subclass: bool = bool(literal_bases)
 
         # The root LiteralEnum class itself has no members.
@@ -249,12 +254,10 @@ class LiteralEnumMeta(type):
                 f"({', '.join(b.__name__ for b in literal_bases)})."
             )
 
-        base: type = literal_bases[0]
+        base: LiteralEnumMeta = literal_bases[0]
 
         # --- Guard against accidental subclassing ---
-        # If the parent already has members and ``extend=True`` wasn't
-        # passed, the user probably didn't intend to widen the value set.
-        if not extend and getattr(base, "_members_", {}):
+        if not extend and base._members_:
             raise TypeError(
                 f"{name} inherits from {base.__name__}; use "
                 f"`class {name}({base.__name__}, extend=True): ...` "
@@ -264,21 +267,20 @@ class LiteralEnumMeta(type):
 
         # --- Resolve inheritable flags: explicit kwarg wins, else inherit ---
         if allow_aliases is None:
-            allow_aliases = getattr(base, "_allow_aliases_", True)
+            allow_aliases = base._allow_aliases_
         cls._allow_aliases_ = allow_aliases
 
         if call_to_validate is None:
-            call_to_validate = getattr(base, "_call_to_validate_", False)
+            call_to_validate = base._call_to_validate_
         cls._call_to_validate_ = call_to_validate
 
         # --- Seed from parent if extending, otherwise start fresh ---
         if extend:
-            members: dict[str, Any] = dict(getattr(base, "_members_", {}))
-            values: list[Any] = list(getattr(base, "_ordered_values_", ()))
-            value_keys: set[tuple[type, object]] = set(getattr(base, "_value_keys_", frozenset()))
-            # Deep-copy so appending alias names doesn't mutate the parent.
+            members: dict[str, Any] = dict(base._members_)
+            values: list[Any] = list(base._ordered_values_)
+            value_keys: set[tuple[type, object]] = set(base._value_keys_)
             value_names: dict[tuple[type, object], list[str]] = {
-                k: list(v) for k, v in getattr(base, "_value_names_", {}).items()
+                k: list(v) for k, v in base._value_names_.items()
             }
         else:
             members = {}
@@ -289,17 +291,8 @@ class LiteralEnumMeta(type):
         ignore: set[str] = _parse_ignore(ns)
 
         # --- Scan namespace for member candidates ---
-        # A name is treated as a member if it:
-        #   - is not in the _ignore_ set
-        #   - does not start with "_"
-        #   - is not a descriptor (function, property, classmethod, etc.)
-        #   - has a value whose type is allowed by typing.Literal
         for k, v in ns.items():
-            if k in ignore:
-                continue
-            if k.startswith("_"):
-                continue
-            if _is_descriptor(v):
+            if k in ignore or k.startswith("_") or _is_descriptor(v):
                 continue
 
             if not _is_literal_type(v):
@@ -308,7 +301,6 @@ class LiteralEnumMeta(type):
                     "not a supported Literal value."
                 )
 
-            # Prevent name collisions when extending a parent.
             if extend and k in members:
                 raise TypeError(
                     f"Member name '{name}.{k}' conflicts with inherited member "
@@ -316,12 +308,7 @@ class LiteralEnumMeta(type):
                 )
 
             members[k] = v
-
-            # Deduplicate by strict key so that e.g. True and 1 remain
-            # distinct, but the same (type, value) pair isn't added twice.
-            # Duplicate values are permitted; the first declared name is
-            # canonical.  Later names for the same value become aliases.
-            key: tuple[type, object] = _strict_key(v)
+            key = _strict_key(v)
             if key not in value_keys:
                 value_keys.add(key)
                 values.append(v)
@@ -348,23 +335,10 @@ class LiteralEnumMeta(type):
 
     @property
     def mapping(cls) -> Mapping[str, Any]:
-        """A read-only ``{name: value}`` mapping of all members, including aliases."""
         return cls.__members__
 
     @property
     def unique_mapping(cls) -> Mapping[str, Any]:
-        """A read-only ``{name: value}`` mapping of canonical members only.
-
-        Aliases are excluded — each unique value appears under its
-        first-declared name only::
-
-            class Method(LiteralEnum):
-                GET = "GET"
-                get = "GET"       # alias
-
-            Method.unique_mapping  # {"GET": "GET"}
-            Method.mapping         # {"GET": "GET", "get": "GET"}
-        """
         return MappingProxyType({
             names[0]: cls._members_[names[0]]
             for names in cls._value_names_.values()
@@ -372,18 +346,6 @@ class LiteralEnumMeta(type):
 
     @property
     def name_mapping(cls) -> Mapping[Any, str]:
-        """A read-only ``{value: canonical_name}`` inverse mapping.
-
-        Each unique value maps to its first-declared (canonical) name::
-
-            class Method(LiteralEnum):
-                GET = "GET"
-                get = "GET"       # alias
-
-            Method.name_mapping   # {"GET": "GET"}
-
-        See also :attr:`names_mapping` for all names including aliases.
-        """
         return MappingProxyType({
             v: names[0]
             for v, names in zip(cls._ordered_values_, cls._value_names_.values())
@@ -393,180 +355,62 @@ class LiteralEnumMeta(type):
     def names_by_value(cls) -> Mapping[Any, str]:
         return cls.name_mapping
 
-
     @property
     def names_mapping(cls) -> Mapping[Any, tuple[str, ...]]:
-        """A read-only ``{value: (name, ...)}`` inverse mapping.
-
-        Each unique value maps to a tuple of all its declared names
-        (canonical first, then aliases)::
-
-            class Method(LiteralEnum):
-                GET = "GET"
-                get = "GET"       # alias
-
-            Method.names_mapping  # {"GET": ("GET", "get")}
-        """
         return MappingProxyType({
             v: names
             for v, names in zip(cls._ordered_values_, cls._value_names_.values())
         })
 
     def keys(cls) -> tuple[str, ...]:
-        """Return canonical member names in definition order (aliases excluded)."""
-        return tuple(
-            names[0] for names in cls._value_names_.values()
-        )
+        return tuple(names[0] for names in cls._value_names_.values())
 
     def values(cls) -> tuple[Any, ...]:
-        """Return unique member values in definition order (aliases excluded).
-
-        Equivalent to ``tuple(cls)``.
-        """
         return cls._ordered_values_
 
     def items(cls) -> tuple[tuple[str, Any], ...]:
-        """Return ``(canonical_name, value)`` pairs in definition order (aliases excluded)."""
         return tuple(zip(cls.keys(), cls._ordered_values_))
 
-    # ---- Alias introspection ----
-
     def names(cls, value: object) -> tuple[str, ...]:
-        """Return all declared names for *value*, in definition order.
-
-        The first element is the canonical name; any subsequent elements
-        are aliases.  Useful for synonyms, deprecations, or backwards
-        compatibility::
-
-            class Method(LiteralEnum):
-                GET = "GET"
-                get = "GET"       # alias
-
-            Method.names("GET")           # ("GET", "get")
-            Method.canonical_name("GET")  # "GET"
-
-        Raises:
-            KeyError: If *value* is not a member of this LiteralEnum.
-        """
         try:
             return cls._value_names_[_strict_key(value)]
         except KeyError:
-            raise KeyError(
-                f"{value!r} is not a member of {cls.__name__}"
-            ) from None
+            raise KeyError(f"{value!r} is not a member of {cls.__name__}") from None
 
     def canonical_name(cls, value: object) -> str:
-        """Return the canonical (first-declared) name for *value*.
-
-        Raises:
-            KeyError: If *value* is not a member of this LiteralEnum.
-        """
         return cls.names(value)[0]
 
     def __iter__(cls) -> Iterator[Any]:
-        """Iterate over unique member *values* in first-seen order.
-
-        Aliases are collapsed — each underlying value appears exactly once.
-
-        Example::
-
-            class Method(LiteralEnum):
-                GET = "GET"
-                get = "GET"   # alias, not yielded separately
-
-            list(Method)  # ["GET"]
-        """
         return iter(cls._ordered_values_)
 
     def __reversed__(cls) -> Iterator[Any]:
-        """Iterate over unique member values in reverse definition order.
-
-        Example::
-
-            list(reversed(HttpMethod))  # ["DELETE", "POST", "GET"]
-        """
         return reversed(cls._ordered_values_)
 
     def __len__(cls) -> int:
-        """Return the number of unique member values (aliases are not counted)."""
         return len(cls._ordered_values_)
 
     def __bool__(cls) -> bool:
-        """A LiteralEnum class is truthy if it has any members.
-
-        Example::
-
-            class Empty(LiteralEnum):
-                pass
-
-            bool(Empty)       # False
-            bool(HttpMethod)  # True
-        """
         return bool(cls._ordered_values_)
 
     def __contains__(cls, value: object) -> bool:
-        """Test membership using strict (type-aware) equality.
-
-        Example::
-
-            "GET" in HttpMethod   # True
-            "git" in HttpMethod   # False
-            True in BoolFlags     # won't collide with 1
-
-        Returns ``False`` for unhashable values instead of raising.
-        """
         try:
             return _strict_key(value) in cls._value_keys_
         except TypeError:
             return False
 
     def __getitem__(cls, key: str) -> Any:
-        """Look up a member value by its attribute name.
-
-        Example::
-
-            HttpMethod["GET"]  # "GET"
-
-        Raises:
-            KeyError: If *key* is not a member name.
-        """
         try:
             return cls._members_[key]
         except KeyError:
             raise KeyError(f"'{key}' is not a member of {cls.__name__}") from None
 
     def __repr__(cls) -> str:
-        """Return a readable representation of the LiteralEnum class.
-
-        Example::
-
-            repr(HttpMethod)
-            # "<LiteralEnum 'HttpMethod' [GET='GET', POST='POST', DELETE='DELETE']>"
-        """
         if not cls._members_:
             return f"<LiteralEnum '{cls.__name__}'>"
-        members: str = ", ".join(f"{k}={v!r}" for k, v in cls._members_.items())
+        members: str = ", ".join(f"{k}={v!r}" for k, v in cls.items())
         return f"<LiteralEnum '{cls.__name__}' [{members}]>"
 
-    def __or__(cls, other: LiteralEnumMeta) -> LiteralEnumMeta:
-        """Combine two LiteralEnums into a new anonymous LiteralEnum.
-
-        The result contains the union of both value sets.  Canonical name
-        order is: all of *cls*'s values first, then *other*'s new values.
-
-        Example::
-
-            class Get(LiteralEnum):
-                GET = "GET"
-
-            class Post(LiteralEnum):
-                POST = "POST"
-
-            Combined = Get | Post
-            list(Combined)          # ["GET", "POST"]
-            "GET" in Combined       # True
-            Combined.__name__       # "Get|Post"
-        """
+    def __or__(cls, other: Any) -> LiteralEnumMeta:
         if not isinstance(other, LiteralEnumMeta):
             return NotImplemented
         ns: dict[str, Any] = {}
@@ -575,26 +419,7 @@ class LiteralEnumMeta(type):
         combined_name: str = f"{cls.__name__}|{other.__name__}"
         return LiteralEnumMeta(combined_name, (LiteralEnum,), ns)
 
-    def __and__(cls, other: LiteralEnumMeta) -> LiteralEnumMeta:
-        """Intersect two LiteralEnums into a new anonymous LiteralEnum.
-
-        The result contains only values present in *both* operands.
-        Names and order are taken from the left operand (*cls*).
-
-        Example::
-
-            class ReadWrite(LiteralEnum):
-                GET = "GET"
-                POST = "POST"
-
-            class ReadOnly(LiteralEnum):
-                GET = "GET"
-                HEAD = "HEAD"
-
-            Common = ReadWrite & ReadOnly
-            list(Common)          # ["GET"]
-            Common.__name__       # "ReadWrite&ReadOnly"
-        """
+    def __and__(cls, other: Any) -> LiteralEnumMeta:
         if not isinstance(other, LiteralEnumMeta):
             return NotImplemented
         ns: dict[str, Any] = {
@@ -605,23 +430,6 @@ class LiteralEnumMeta(type):
         return LiteralEnumMeta(combined_name, (LiteralEnum,), ns)
 
     def __call__(cls, value: Any) -> Any:
-        """Call the LiteralEnum class to validate a value.
-
-        Behavior depends on ``call_to_validate``:
-
-        * ``False`` (default): raises ``TypeError`` — LiteralEnum is not
-          instantiable.
-        * ``True``: validates *value* and returns it if it's a member,
-          otherwise raises ``ValueError``.  Equivalent to
-          ``cls.validate(value)``::
-
-            class HttpMethod(LiteralEnum, call_to_validate=True):
-                GET = "GET"
-                POST = "POST"
-
-            HttpMethod("GET")   # "GET"
-            HttpMethod("git")   # ValueError
-        """
         if cls._call_to_validate_:
             return validate_is_member(cls, value)
         raise TypeError(
@@ -629,78 +437,20 @@ class LiteralEnumMeta(type):
             f"use {cls.__name__}.validate(x) or x in {cls.__name__}"
         )
 
-    # ---- Validation helpers (available as classmethods on the literalenum) ----
-
-    def is_valid(cls: type[LE], x: object) -> TypeGuard[LE]:
-        """Check if *x* is a valid member value (with type narrowing).
-
-        Equivalent to ``is_member(cls, x)`` but available as a method on
-        the class itself::
-
-            if HttpMethod.is_valid(user_input):
-                ...  # user_input is narrowed to HttpMethod
-        """
+    def is_valid(cls: "LiteralEnumMeta", x: object) -> TypeGuard["LiteralEnumMeta"]:
         return is_member(cls, x)
 
-    def validate(cls: type[LE], x: object) -> LE:
-        """Validate *x* is a member value, or raise ``ValueError``.
-
-        Equivalent to ``validate_is_member(cls, x)``::
-
-            method = HttpMethod.validate(user_input)  # raises on bad input
-        """
+    def validate(cls: "LiteralEnumMeta", x: object) -> "LiteralEnum":
         return validate_is_member(cls, x)
 
-    # ---- Testing utilities ----
-
-    def matches_enum(cls, enum_cls: type) -> bool:
-        """Check whether this LiteralEnum has exactly the same values as *enum_cls*.
-
-        Compares the set of unique values in this LiteralEnum against the
-        ``.value`` of every member in the given ``enum.Enum`` (or subclass).
-        Useful in test suites to assert two parallel definitions stay in sync::
-
-            import enum
-
-            class Color(enum.StrEnum):
-                RED = "red"
-                GREEN = "green"
-
-            class ColorLE(LiteralEnum):
-                RED = "red"
-                GREEN = "green"
-
-            assert ColorLE.matches_enum(Color)
-
-        Returns:
-            ``True`` if the value sets are identical.
-        """
+    def matches_enum(cls, enum_cls: "LiteralEnumMeta") -> bool:
         try:
             enum_values = {m.value for m in enum_cls}
-        except TypeError:
+        except (TypeError, AttributeError):
             return False
         return set(cls._ordered_values_) == enum_values
 
     def matches_literal(cls, literal_type: Any) -> bool:
-        """Check whether this LiteralEnum has exactly the same values as *literal_type*.
-
-        Extracts the arguments from a ``typing.Literal[...]`` and compares
-        them against this LiteralEnum's unique values.  Useful in test suites
-        to assert a Literal type alias stays in sync with a LiteralEnum::
-
-            from typing import Literal
-
-            ColorLiteral = Literal["red", "green"]
-
-            class Color(LiteralEnum):
-                RED = "red"
-                GREEN = "green"
-
-            assert Color.matches_literal(ColorLiteral)
-
-        Returns:
-            ``True`` if the value sets are identical.
-        """
         from typing import get_args
         args = get_args(literal_type)
         if not args:
@@ -713,44 +463,7 @@ class LiteralEnumMeta(type):
 # ---------------------------------------------------------------------------
 
 class LiteralEnum(metaclass=LiteralEnumMeta):
-    """Base class for defining a set of named literal values.
-
-    Subclass ``LiteralEnum`` and assign literal values as class attributes::
-
-        class Color(LiteralEnum):
-            RED = "red"
-            GREEN = "green"
-            BLUE = "blue"
-
-    At runtime:
-
-    * ``Color.RED`` evaluates to ``"red"`` (a plain ``str``).
-    * ``list(Color)`` returns ``["red", "green", "blue"]``.
-    * ``"red" in Color`` returns ``True``.
-    * ``Color.validate(x)`` returns *x* if valid or raises ``ValueError``.
-
-    At type-check time, ``Color`` is intended to be equivalent to
-    ``Literal["red", "green", "blue"]``.
-
-    ``LiteralEnum`` is **not instantiable** — its values are plain scalars,
-    not wrapper objects.  Use ``validate()`` or ``is_valid()`` instead.
-
-    Duplicate values are permitted; the first declared name is canonical
-    and later names are aliases::
-
-        class Method(LiteralEnum):
-            GET = "GET"
-            get = "GET"       # alias for GET
-
-        Method.names("GET")           # ("GET", "get")
-        Method.canonical_name("GET")  # "GET"
-        list(Method)                  # ["GET"]  (aliases not yielded)
-
-    To extend an existing LiteralEnum, pass ``extend=True``::
-
-        class ExtendedColor(Color, extend=True):
-            YELLOW = "yellow"
-    """
+    """Base class for defining a set of named literal values."""
     @classmethod
     def __init_subclass__(
             cls,
@@ -762,15 +475,8 @@ class LiteralEnum(metaclass=LiteralEnumMeta):
     ) -> None:
         super().__init_subclass__(**kwargs)
 
-    def __new__(cls, value: Never) -> NoReturn | LE:
-        """Signal to type checkers that LiteralEnum is not instantiable.
-
-        At runtime, the metaclass ``__call__`` intercepts before this is
-        reached — either validating (``call_to_validate=True``) or raising
-        ``TypeError``.  This method exists solely so that type checkers
-        flag ``HttpMethod("GET")`` as an error by default.
-        """
-        if cls._call_to_validate_:
+    def __new__(cls: "LiteralEnumMeta", value: Never) -> "LiteralEnum":
+        if getattr(cls, '_call_to_validate_', False):
             return validate_is_member(cls, value)
         raise TypeError(
             f"{cls.__name__} is not instantiable; "

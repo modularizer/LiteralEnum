@@ -20,10 +20,10 @@ Enable in mypy.ini / pyproject.toml:
 from __future__ import annotations
 
 import sys
-print("[literalenum] PLUGIN MODULE IMPORTED", file=sys.stderr)
 from typing import Any, Callable
 
 from mypy.nodes import (
+    ARG_NAMED_OPT,
     ARG_POS,
     Argument,
     AssignmentStmt,
@@ -42,13 +42,17 @@ from mypy.plugin import (
 )
 from mypy.plugins.common import add_method_to_class
 from mypy.types import (
+    AnyType,
     Instance,
     LiteralType,
     NoneType,
     Type,
+    TypeOfAny,
     UnionType,
     get_proper_type,
 )
+
+print("[literalenum] PLUGIN MODULE IMPORTED", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +129,7 @@ def _make_union(members: Members, named_type: Callable[..., Instance]) -> Type:
         seen.add(key)
         types.append(_make_literal_type(value, type_tag, named_type))
     if not types:
-        # Degenerate: empty LiteralEnum ⇒ Never (nothing is assignable)
+        # Degenerate: empty LiteralEnum -> Never (nothing is assignable)
         return UnionType([])
     return UnionType.make_union(types)
 
@@ -137,23 +141,25 @@ def _make_union(members: Members, named_type: Callable[..., Instance]) -> Type:
 
 class LiteralEnumPlugin(Plugin):
     """
-    Two-hook architecture:
+    Three-hook architecture:
 
-    1. get_base_class_hook  – processes class definitions, types members
-       as Final[Literal[...]], stores metadata.
+    1. get_base_class_hook  -- processes class definitions, types members
+       as Final[Literal[...]], stores metadata, adds __init_subclass__.
 
-    2. get_type_analyze_hook – intercepts type references in annotations
-       and expands  HttpMethod → Literal["GET", "POST", ...]
+    2. get_type_analyze_hook -- intercepts type references in annotations
+       and expands  HttpMethod -> Literal["GET", "POST", ...]
+       Returns the original class Instance in base-class context so
+       subclassing still works.
 
-    3. get_function_hook – refines the return type of constructor calls
-       HttpMethod("GET") → Literal["GET"]
+    3. get_function_hook -- refines the return type of constructor calls
+       HttpMethod("GET") -> Literal["GET"]
     """
 
     def __init__(self, options: Any) -> None:
         super().__init__(options)
         self._classes: dict[str, Members] = {}
 
-    # ── hook registration ─────────────────────────────────────────────
+    # -- hook registration -------------------------------------------------
 
     def _log(self, msg: str) -> None:
         # print(f"[literalenum] {msg}", file=sys.stderr)
@@ -165,17 +171,22 @@ class LiteralEnumPlugin(Plugin):
     ) -> Callable[[ClassDefContext], None] | None:
         if fullname in _BASE_FULLNAMES:
             return self._on_class_def
+        # Also handle LiteralEnum subclasses as base classes
+        if fullname in self._classes:
+            return self._on_class_def
+        sym = self.lookup_fully_qualified(fullname)
+        if sym and isinstance(sym.node, TypeInfo):
+            if self._is_literalenum_typeinfo(sym.node):
+                return self._on_class_def
         return None
 
     def _is_literalenum_typeinfo(self, info: TypeInfo) -> bool:
-        # If we've already tagged it, great.
         if METADATA_KEY in info.metadata:
             return True
-        # Otherwise, check MRO for the base class.
         return any(base.fullname in _BASE_FULLNAMES for base in info.mro[1:])
 
     def get_type_analyze_hook(
-            self, fullname: str
+        self, fullname: str
     ) -> Callable[[AnalyzeTypeContext], Type] | None:
         self._log(f"get_type_analyze_hook asked about: {fullname}")
         sym = self.lookup_fully_qualified(fullname)
@@ -185,7 +196,17 @@ class LiteralEnumPlugin(Plugin):
             return None
 
         def callback(ctx: AnalyzeTypeContext) -> Type:
-            self._log(f"function_hook: {fullname}")
+            self._log(f"type_analyze: {fullname}")
+
+            # Detect base-class context: when mypy analyzes base classes it
+            # creates a TypeAnalyser with allow_placeholder=True.  In that
+            # case we must return the original class Instance so subclassing
+            # works (a Literal union is not a valid base class).
+            if getattr(ctx.api, "allow_placeholder", False):
+                inner_sym = self.lookup_fully_qualified(fullname)
+                if inner_sym and isinstance(inner_sym.node, TypeInfo):
+                    return Instance(inner_sym.node, [])
+
             members = self._resolve(fullname)
             if members is None:
                 return ctx.type  # fall back to whatever mypy inferred
@@ -194,9 +215,9 @@ class LiteralEnumPlugin(Plugin):
         return callback
 
     def get_function_hook(
-            self, fullname: str
+        self, fullname: str
     ) -> Callable[[FunctionContext], Type] | None:
-        self._log(f"get_type_analyze_hook asked about: {fullname}")
+        self._log(f"get_function_hook asked about: {fullname}")
         sym = self.lookup_fully_qualified(fullname)
         if not sym or not isinstance(sym.node, TypeInfo):
             return None
@@ -204,7 +225,7 @@ class LiteralEnumPlugin(Plugin):
             return None
 
         def callback(ctx: FunctionContext) -> Type:
-            self._log(f"type_analyze: {fullname}")
+            self._log(f"function_hook: {fullname}")
             members = self._resolve(fullname)
             if members is None:
                 return ctx.default_return_type
@@ -212,8 +233,7 @@ class LiteralEnumPlugin(Plugin):
 
         return callback
 
-
-    # ── member resolution (cache + metadata fallback) ─────────────────
+    # -- member resolution (cache + metadata fallback) ---------------------
 
     def _resolve(self, fullname: str) -> Members | None:
         if fullname in self._classes:
@@ -223,14 +243,12 @@ class LiteralEnumPlugin(Plugin):
         if sym and sym.node and isinstance(sym.node, TypeInfo):
             meta = sym.node.metadata.get(METADATA_KEY)
             if meta and "members" in meta:
-                members: Members = {
-                    k: tuple(v) for k, v in meta["members"].items()
-                }
+                members: Members = {k: tuple(v) for k, v in meta["members"].items()}
                 self._classes[fullname] = members
                 return members
         return None
 
-    # ── hook 1: base class — process class definition ─────────────────
+    # -- hook 1: base class -- process class definition --------------------
 
     def _on_class_def(self, ctx: ClassDefContext) -> None:
         self._log(f"class_def: {ctx.cls.info.fullname}")
@@ -244,7 +262,10 @@ class LiteralEnumPlugin(Plugin):
                 for name, pair in parent_meta["members"].items():
                     members[name] = tuple(pair)
 
-        # Collect own members from the class body
+        # Collect own members from the class body.
+        # Match runtime behavior: any public, non-underscore name with a
+        # literal value is a member (no isupper() restriction).
+        own_members: Members = {}
         for stmt in ctx.cls.defs.body:
             if not isinstance(stmt, AssignmentStmt) or len(stmt.lvalues) != 1:
                 continue
@@ -252,12 +273,13 @@ class LiteralEnumPlugin(Plugin):
             if not isinstance(lvalue, NameExpr):
                 continue
             name = lvalue.name
-            if not name.isupper() or name.startswith("_"):
+            if name.startswith("_"):
                 continue
             result = _extract_literal(stmt.rvalue)
             if result is None:
                 continue
-            members[name] = result
+            own_members[name] = result
+        members.update(own_members)
 
         # Persist (JSON-safe) and cache
         info.metadata[METADATA_KEY] = {
@@ -265,14 +287,18 @@ class LiteralEnumPlugin(Plugin):
         }
         self._classes[info.fullname] = members
 
-        # Type each member as Final[Literal[<value>]]
-        for name, (value, type_tag) in members.items():
+        # Type each own member as Literal[...].
+        # We set the type but not is_final because the base_class_hook fires
+        # while the class body is still being analyzed — marking a var as
+        # final at this point causes "Cannot assign to final name" errors.
+        for name, (value, type_tag) in own_members.items():
             sym = info.names.get(name)
-            if sym is None or not isinstance(sym.node, Var):
-                continue
-            var = sym.node
-            var.is_final = True
-            var.type = _make_literal_type(value, type_tag, ctx.api.named_type)
+            if sym and isinstance(sym.node, Var):
+                var = sym.node
+                literal_type = _make_literal_type(
+                    value, type_tag, ctx.api.named_type
+                )
+                var.type = literal_type
 
         # Add __init__(self, value: <base_type>) -> None
         # so that HttpMethod("GET") is syntactically valid.
@@ -284,9 +310,7 @@ class LiteralEnumPlugin(Plugin):
                 if tag == "none":
                     param_types.append(NoneType())
                 else:
-                    param_types.append(
-                        ctx.api.named_type(_TAG_TO_BUILTIN[tag], [])
-                    )
+                    param_types.append(ctx.api.named_type(_TAG_TO_BUILTIN[tag], []))
             param_type = (
                 UnionType.make_union(param_types)
                 if len(param_types) > 1
@@ -297,14 +321,44 @@ class LiteralEnumPlugin(Plugin):
                 ctx.cls,
                 "__init__",
                 args=[
-                    Argument(
-                        Var("value", param_type), param_type, None, ARG_POS
-                    )
+                    Argument(Var("value", param_type), param_type, None, ARG_POS)
                 ],
                 return_type=NoneType(),
             )
 
-    # ── hook 3: constructor return type ───────────────────────────────
+        # Add __init_subclass__ accepting extend, allow_aliases,
+        # call_to_validate keyword args so subclassing works.
+        bool_type = ctx.api.named_type("builtins.bool", [])
+        any_type = AnyType(TypeOfAny.explicit)
+        add_method_to_class(
+            ctx.api,
+            ctx.cls,
+            "__init_subclass__",
+            args=[
+                Argument(
+                    Var("extend", bool_type),
+                    bool_type,
+                    NameExpr("False"),
+                    ARG_NAMED_OPT,
+                ),
+                Argument(
+                    Var("allow_aliases", bool_type),
+                    bool_type,
+                    NameExpr("True"),
+                    ARG_NAMED_OPT,
+                ),
+                Argument(
+                    Var("call_to_validate", bool_type),
+                    bool_type,
+                    NameExpr("False"),
+                    ARG_NAMED_OPT,
+                ),
+            ],
+            return_type=NoneType(),
+            is_classmethod=True,
+        )
+
+    # -- hook 3: constructor return type -----------------------------------
 
     def _on_constructor(
         self,
@@ -330,9 +384,9 @@ class LiteralEnumPlugin(Plugin):
 
             member_keys = {(v, t) for _, (v, t) in members.items()}
             if arg_tag and (arg_type.value, arg_tag) in member_keys:
-                return arg_type  # narrow: HttpMethod("GET") → Literal["GET"]
+                return arg_type  # narrow: HttpMethod("GET") -> Literal["GET"]
 
-            # Not a member — report error
+            # Not a member -- report error
             class_name = fullname.rsplit(".", 1)[-1]
             valid = ", ".join(repr(v) for _, (v, _) in members.items())
             ctx.api.fail(
@@ -347,7 +401,7 @@ class LiteralEnumPlugin(Plugin):
             if any(t == "none" for _, (_, t) in members.items()):
                 return NoneType()
 
-        # Non-literal (bare str, variable, etc.) — return the full union.
+        # Non-literal (bare str, variable, etc.) -- return the full union.
         # This is the best we can do without knowing the runtime value.
         return _make_union(members, ctx.api.named_generic_type)
 
@@ -358,4 +412,5 @@ class LiteralEnumPlugin(Plugin):
 
 
 def plugin(version: str) -> type[Plugin]:
+    """Mypy plugin entry point."""
     return LiteralEnumPlugin
