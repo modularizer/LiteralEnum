@@ -21,10 +21,11 @@ LiteralEnum aims to make the common case a single source of truth.
 ---
 
 ## What is it?
-1. A runtime python package provided with `pip install literalenum`
-2. A mypy plugin for correctly type checking the new construct in a way that matches the runtime behavior
-3. A Pycharm Plugin for correct syntax highlighting to match the runtime behavior
-4. A discussion in hopes of creating support for a PEP to help solve these painpoints in the Python language, such that type checker plugins are not needed
+1. ✅ A runtime python package provided with `pip install literalenum`
+2. ✅ A mypy plugin for correctly type checking the new construct in a way that matches the runtime behavior
+3. ✅ A Pycharm Plugin for correct syntax highlighting to match the runtime behavior
+4. ✅ A discussion in hopes of creating support for a PEP to help solve these painpoints in the Python language, such that type checker plugins are not needed
+5. ⚠️ TODO: a `basedpyright` fork VS Code plugin to provide pylance-esque syntax highlighting in VS Code
 
 ---
 ## Table of Contents

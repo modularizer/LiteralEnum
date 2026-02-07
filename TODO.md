@@ -1,0 +1,1 @@
+1. make sure it works in pyright/pylance/VS Code (see BASED_PYRIGHT_PLAN.md)
