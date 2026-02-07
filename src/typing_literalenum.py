@@ -32,7 +32,7 @@ from __future__ import annotations
 import sys
 from types import MappingProxyType
 import inspect
-from typing import Any, Iterator, Mapping, TypeVar, NoReturn, TypeGuard
+from typing import Any, Iterator, Mapping, TypeVar, NoReturn, TypeGuard, TYPE_CHECKING
 
 if sys.version_info >= (3, 11):
     from typing import Never
@@ -410,14 +410,15 @@ class LiteralEnumMeta(type):
         members: str = ", ".join(f"{k}={v!r}" for k, v in cls.items())
         return f"<LiteralEnum '{cls.__name__}' [{members}]>"
 
-    def __or__(cls, other: Any) -> LiteralEnumMeta:
-        if not isinstance(other, LiteralEnumMeta):
-            return NotImplemented
-        ns: dict[str, Any] = {}
-        ns.update(cls._members_)
-        ns.update(other._members_)
-        combined_name: str = f"{cls.__name__}|{other.__name__}"
-        return LiteralEnumMeta(combined_name, (LiteralEnum,), ns)
+    if not TYPE_CHECKING:
+        def __or__(cls, other: Any) -> LiteralEnumMeta:
+            if not isinstance(other, LiteralEnumMeta):
+                return NotImplemented
+            ns: dict[str, Any] = {}
+            ns.update(cls._members_)
+            ns.update(other._members_)
+            combined_name: str = f"{cls.__name__}|{other.__name__}"
+            return LiteralEnumMeta(combined_name, (LiteralEnum,), ns)
 
     def __and__(cls, other: Any) -> LiteralEnumMeta:
         if not isinstance(other, LiteralEnumMeta):

@@ -6,6 +6,9 @@ import com.intellij.psi.PsiElement
 import com.jetbrains.python.psi.*
 import com.jetbrains.python.psi.impl.PyBuiltinCache
 import com.jetbrains.python.psi.types.*
+import com.jetbrains.python.PyTokenTypes
+import com.jetbrains.python.psi.PyBinaryExpression
+
 
 /**
  * Type provider that makes LiteralEnum subclasses dual-natured:
@@ -90,6 +93,13 @@ class LiteralEnumTypeProvider : PyTypeProviderBase() {
     ): PyType? {
         if (!isInAnnotationContext(referenceExpression)) return null
 
+        // IMPORTANT: if we're inside a PEP-604 union (A | B), don't rewrite the operand.
+        // Otherwise PyCharm can flag: "Type hint is invalid..."
+        val parentBin = referenceExpression.parent as? PyBinaryExpression
+        if (parentBin != null && parentBin.operator == PyTokenTypes.OR) {
+            return null
+        }
+
         val pyClass = resolveToLiteralEnumClass(referenceExpression, context) ?: return null
         return buildLiteralUnionType(pyClass, context)
     }
@@ -135,15 +145,44 @@ class LiteralEnumTypeProvider : PyTypeProviderBase() {
     internal fun resolveExpressionToLiteralUnion(expr: PyExpression, context: TypeEvalContext): PyType? {
         val e = (expr as? PyParenthesizedExpression)?.containedExpression ?: expr
 
+        // Handle PEP-604 unions: A | B
+        if (e is PyBinaryExpression && e.operator == PyTokenTypes.OR) {
+            val parts = flattenOr(e)
+            val partTypes = parts.mapNotNull { part ->
+                // rewrite LiteralEnum class refs to literal unions, otherwise let PyCharm infer
+                if (part is PyReferenceExpression) {
+                    val resolved = part.reference.resolve() as? PyClass
+                    if (resolved != null && isLiteralEnumClass(resolved, context)) {
+                        buildLiteralUnionType(resolved, context)
+                    } else {
+                        context.getType(part)
+                    }
+                } else {
+                    context.getType(part)
+                }
+            }
+            return if (partTypes.isEmpty()) null else PyUnionType.union(partTypes)
+        }
+
+        // Simple reference: Colors
         if (e is PyReferenceExpression) {
-            val resolved = e.reference.resolve()
-            val pyClass = resolved as? PyClass ?: return null
-            if (!isLiteralEnumClass(pyClass, context)) return null
-            return buildLiteralUnionType(pyClass, context)
+            val resolved = e.reference.resolve() as? PyClass ?: return null
+            if (!isLiteralEnumClass(resolved, context)) return null
+            return buildLiteralUnionType(resolved, context)
         }
 
         return null
     }
+
+    private fun flattenOr(expr: PyExpression): List<PyExpression> {
+        val e = (expr as? PyParenthesizedExpression)?.containedExpression ?: expr
+        val bin = e as? PyBinaryExpression ?: return listOf(e)
+        if (bin.operator != PyTokenTypes.OR) return listOf(e)
+        val left = bin.leftExpression ?: return listOf(e)
+        val right = bin.rightExpression ?: return listOf(e)
+        return flattenOr(left) + flattenOr(right)
+    }
+
 
     private fun resolveToLiteralEnumClass(
         refExpr: PyReferenceExpression,

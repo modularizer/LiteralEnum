@@ -101,12 +101,20 @@ class InheritedStrict(StrictColors, extend=True):
 def print_color(c: Literal["PURPLE"] | Colors) -> None:
     print(f"{c=}")
 
+def print_color2(c: Colors | Literal["PURPLE"] ) -> None:
+    print(f"{c=}")
+
 print_color("BLUE")         # OK — valid member
 print_color("RED")           # OK — valid member
 print_color("PURPLE")           # OK — valid member
 print_color("GREEN")         # ERROR — not a member of Colors
 print_color(Colors.BLUE)     # OK — resolves to Literal["BLUE"]
 
+print_color2("BLUE")         # OK — valid member
+print_color2("RED")           # OK — valid member
+print_color2("PURPLE")           # OK — valid member
+print_color2("GREEN")         # ERROR — not a member of Colors
+print_color2(Colors.BLUE)     # OK — resolves to Literal["BLUE"]
 
 # ============================================================
 # 8. Container protocol — runtime features

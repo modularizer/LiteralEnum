@@ -1,1 +1,0 @@
-1. in pycharm-plugin, why is `Literal["PURPLE"] | Colors` okay but `Colors | Literal["PURPLE"]` not?
