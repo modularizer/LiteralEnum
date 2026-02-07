@@ -7,6 +7,8 @@ import com.intellij.psi.PsiElementVisitor
 import com.jetbrains.python.inspections.PyInspectionVisitor
 import com.jetbrains.python.psi.*
 import com.jetbrains.python.psi.types.TypeEvalContext
+import com.intellij.psi.util.PsiTreeUtil
+
 
 /**
  * Replacement inspection for call-site argument checking when a parameter is annotated
@@ -161,34 +163,47 @@ class LiteralEnumCallArgumentInspection : LocalInspectionTool() {
             }
 
             private fun checkDuplicateAliases(node: PyClass) {
-                if (effectiveAllowAliases(node, myTypeEvalContext)) return
+    if (effectiveAllowAliases(node, myTypeEvalContext)) return
 
-                // Collect own members (not inherited) and check for duplicates
-                val seen = mutableMapOf<Pair<Any?, String>, String>() // (value, tag) -> first name
-                for (statement in node.statementList.statements) {
-                    if (statement !is PyAssignmentStatement) continue
-                    val targets = statement.targets
-                    if (targets.size != 1) continue
-                    val target = targets[0] as? PyTargetExpression ?: continue
-                    val name = target.name ?: continue
-                    if (name.startsWith("_")) continue
+    val seen = mutableMapOf<Pair<Any?, String>, String>() // (value, tag) -> first name
 
-                    val rhs = statement.assignedValue ?: continue
-                    val extracted = extractLiteralFromExpression(rhs) ?: continue
-                    val key = Pair(extracted.first, extracted.second)
+    // 1) Seed with inherited members (so child aliases are caught)
+    val allMembers = extractMembers(node, myTypeEvalContext)
+    for (m in allMembers) {
+        val isFromThisClass = PsiTreeUtil.isAncestor(node, m.expression, /* strict = */ false)
+        if (isFromThisClass) continue
+        val key = Pair(m.value, m.typeTag)
+        seen.putIfAbsent(key, m.name) // first occurrence wins (e.g. RED before CRIMSON)
+    }
 
-                    val existing = seen[key]
-                    if (existing != null) {
-                        holder.registerProblem(
-                            target,
-                            "Duplicate value ${renderLiteral(extracted.first, extracted.second)}: '$name' is an alias for '$existing' (allow_aliases=False)",
-                            ProblemHighlightType.GENERIC_ERROR_OR_WARNING
-                        )
-                    } else {
-                        seen[key] = name
-                    }
-                }
-            }
+    // 2) Check duplicates in *this* class against inherited + previous in this class
+    for (statement in node.statementList.statements) {
+        if (statement !is PyAssignmentStatement) continue
+        val targets = statement.targets
+        if (targets.size != 1) continue
+        val target = targets[0] as? PyTargetExpression ?: continue
+        val name = target.name ?: continue
+        if (name.startsWith("_")) continue
+
+        val rhs = statement.assignedValue ?: continue
+        if (isDescriptorExpression(rhs)) continue
+
+        val extracted = extractLiteralFromExpression(rhs) ?: continue
+        val key = Pair(extracted.first, extracted.second)
+
+        val existing = seen[key]
+        if (existing != null) {
+            holder.registerProblem(
+                target,
+                "Duplicate value ${renderLiteral(extracted.first, extracted.second)}: '$name' is an alias for '$existing' (allow_aliases=False)",
+                ProblemHighlightType.GENERIC_ERROR_OR_WARNING
+            )
+        } else {
+            seen[key] = name
+        }
+    }
+}
+
 
             private fun checkIsinstanceCall(node: PyCallExpression, funcName: String) {
                 val args = node.arguments

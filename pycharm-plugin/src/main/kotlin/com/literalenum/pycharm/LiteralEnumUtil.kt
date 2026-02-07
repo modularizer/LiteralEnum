@@ -7,6 +7,9 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.jetbrains.python.PyTokenTypes
 import com.jetbrains.python.psi.*
 import com.jetbrains.python.psi.types.TypeEvalContext
+import com.intellij.openapi.diagnostic.Logger
+
+private val LOG = Logger.getInstance("literalenum.allowAliases")
 
 /**
  * Fully-qualified names of the LiteralEnum base class.
@@ -125,7 +128,7 @@ private fun collectMembersFromClassBody(
  * Check whether an expression represents a descriptor (function, classmethod, etc.)
  * that should be excluded from member collection.
  */
-private fun isDescriptorExpression(expr: PyExpression): Boolean {
+internal fun isDescriptorExpression(expr: PyExpression): Boolean {
     // Lambda expressions
     if (expr is PyLambdaExpression) return true
 
@@ -216,21 +219,37 @@ fun hasExtend(pyClass: PyClass): Boolean = getClassKeywordBool(pyClass, "extend"
  * Default is True (aliases allowed).
  */
 fun effectiveAllowAliases(pyClass: PyClass, context: TypeEvalContext): Boolean {
-    // Check own keyword first
+    val qn = pyClass.qualifiedName ?: pyClass.name
     val own = getClassKeywordBool(pyClass, "allow_aliases")
-    if (own != null) return own
+    LOG.debug("effectiveAllowAliases: class=$qn ownAllowAliases=$own")
 
-    // Walk ancestors
-    // FIXME: this walk seems to fail, and misses allow_aliases=False on a parent
-    for (ancestor in pyClass.getAncestorClasses(context)) {
-        val qName = ancestor.qualifiedName
-        if (qName != null && qName in LITERAL_ENUM_FQNS) continue
-        val ancestorVal = getClassKeywordBool(ancestor, "allow_aliases")
-        if (ancestorVal != null) return ancestorVal
+    if (own == false) {
+        LOG.debug(" -> returning FALSE (own explicit false)")
+        return false
     }
 
-    return true // default: aliases allowed
+    val ancestors = pyClass.getAncestorClasses(context)
+    LOG.debug("ancestors(${ancestors.size}) for $qn: " +
+        ancestors.joinToString { it.qualifiedName ?: it.name ?: "<anon>" })
+
+    for (ancestor in ancestors) {
+        val aqn = ancestor.qualifiedName ?: ancestor.name
+        val baseSkip = ancestor.qualifiedName?.let { it in LITERAL_ENUM_FQNS } == true
+        LOG.debug(" checking ancestor=$aqn skipBase=$baseSkip")
+        if (baseSkip) continue
+
+        val v = getClassKeywordBool(ancestor, "allow_aliases")
+        LOG.debug("  ancestor=$aqn allow_aliases=$v")
+        if (v == false) {
+            LOG.debug(" -> returning FALSE (ancestor explicit false) ancestor=$aqn")
+            return false
+        }
+    }
+
+    LOG.debug(" -> returning TRUE (no explicit false found)")
+    return true
 }
+
 
 /**
  * Determine whether [element] is inside a type annotation context.
