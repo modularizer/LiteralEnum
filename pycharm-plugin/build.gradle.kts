@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.2.0"
     id("org.jetbrains.intellij.platform") version "2.11.0"
@@ -19,10 +21,11 @@ kotlin {
 
 dependencies {
     intellijPlatform {
-        pycharmCommunity(providers.gradleProperty("platformVersion").get())
+        pycharm(providers.gradleProperty("platformVersion").get())
         bundledPlugin("PythonCore")
     }
 }
+
 
 intellijPlatform {
     pluginConfiguration {
@@ -31,8 +34,8 @@ intellijPlatform {
         version = providers.gradleProperty("pluginVersion").get()
         description = "Makes LiteralEnum subclasses dual-natured: Literal unions in annotations, normal classes in value positions."
         ideaVersion {
-            sinceBuild = "252"
-            untilBuild = "252.*"
+            sinceBuild = "253"
+            untilBuild = "253.*"
         }
     }
 }
