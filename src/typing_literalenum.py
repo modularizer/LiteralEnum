@@ -751,6 +751,16 @@ class LiteralEnum(metaclass=LiteralEnumMeta):
         class ExtendedColor(Color, extend=True):
             YELLOW = "yellow"
     """
+    @classmethod
+    def __init_subclass__(
+            cls,
+            *,
+            extend: bool = False,
+            call_to_validate: bool = False,
+            allow_aliases: bool = True,
+            **kwargs: Any,
+    ) -> None:
+        super().__init_subclass__(**kwargs)
 
     def __new__(cls, value: Never) -> NoReturn | LE:
         """Signal to type checkers that LiteralEnum is not instantiable.
