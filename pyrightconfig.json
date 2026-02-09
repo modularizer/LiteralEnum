@@ -1,0 +1,9 @@
+{
+    "include": ["test_basedpyright.py"],
+    "exclude": ["venv", "**/__pycache__"],
+    "extraPaths": ["src"],
+    "pythonVersion": "3.12",
+    "pythonPlatform": "Linux",
+    "pythonPath": "/usr/bin/python3.12",
+    "typeCheckingMode": "basic"
+}
