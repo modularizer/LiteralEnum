@@ -80,6 +80,37 @@ print(HttpMethod.mapping)
 
 ---
 
+## Pydantic v2
+
+LiteralEnum includes `.literal()` and `.base_model()` converters. It also supports
+direct Pydantic v2 annotations, including `TypeAdapter`, without a separate adapter:
+
+```python
+from literalenum import LiteralEnum
+from pydantic import BaseModel
+
+
+class HttpMethod(LiteralEnum):
+    GET = "GET"
+    POST = "POST"
+
+
+class Request(BaseModel):
+    method: HttpMethod
+
+
+if __name__ == "__main__":
+    example_request = Request(method=HttpMethod.GET)
+    example_json = example_request.model_dump_json()
+    example_schema = Request.model_json_schema()
+    print(example_json, example_schema)
+```
+
+Values remain plain scalars. Validation rejects unknown members and type coercions
+(including `True` or `1.0` for an integer `1` member); JSON schema uses the same
+namespace. Keep the LiteralEnum mypy plugin enabled for static literal narrowing.
+Pydantic stays an optional integration and is imported only when used.
+
 ## Contributing / discussion
 
 Actively looking for feedback!

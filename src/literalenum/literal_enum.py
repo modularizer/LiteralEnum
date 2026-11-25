@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import Never, NoReturn, Any
+from typing import TYPE_CHECKING, Never, NoReturn, Any
+
+if TYPE_CHECKING:
+    from pydantic import GetCoreSchemaHandler
+    from pydantic_core import CoreSchema
 
 import typing_literalenum as core
 from literalenum import compatibility_extensions as compat
@@ -122,6 +126,29 @@ class LiteralEnum(metaclass=LiteralEnumMeta):
         """
 
     @classmethod
+    def __get_pydantic_core_schema__(
+        cls, _source_type: object, _handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        """Validate plain scalar values when used as a Pydantic v2 annotation.
+
+        The same namespace supplies validation, JSON schema and serialization.
+        Import Pydantic only when its schema machinery requests the integration,
+        preserving the package's zero required dependencies.
+        """
+        from pydantic_core import core_schema
+
+        def validate_member(
+            value: object, _validator: core_schema.ValidatorFunctionWrapHandler
+        ) -> object:
+            if value not in cls:
+                raise ValueError(f"Expected a member of {cls.__name__}")
+            return value
+
+        return core_schema.no_info_wrap_validator_function(
+            validate_member, core_schema.literal_schema(list(cls))
+        )
+
+    @classmethod
     def __init_subclass__(
             cls,
             *,
@@ -146,3 +173,16 @@ class LiteralEnum(metaclass=LiteralEnumMeta):
             f"{cls.__name__} is not instantiable; "
             f"use {cls.__name__}.validate(x) or x in {cls.__name__}"
         )
+
+
+if __name__ == "__main__":
+
+    class ExampleMethod(LiteralEnum):
+        """Expose named plain strings for IDE-console exploration."""
+
+        GET = "GET"
+        POST = "POST"
+
+    example_method = ExampleMethod.GET
+    example_members = tuple(ExampleMethod)
+    print(example_method, example_members)
