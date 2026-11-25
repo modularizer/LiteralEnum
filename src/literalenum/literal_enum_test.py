@@ -50,7 +50,7 @@ def test_native_pydantic_rejects_invalid_values(invalid: object) -> None:
 
 def test_native_pydantic_type_adapter() -> None:
     """Direct TypeAdapter use requires neither a model factory nor annotation metadata."""
-    adapter: TypeAdapter[Method] = TypeAdapter(Method)
+    adapter: TypeAdapter[object] = TypeAdapter(Method)
     assert adapter.validate_python("GET") == "GET"
     assert adapter.validate_json(b'"POST"') == "POST"
     assert adapter.dump_json(Method.GET) == b'"GET"'
@@ -65,7 +65,7 @@ def test_native_pydantic_preserves_scalar_identity() -> None:
         OK = 1
         MISSING = 404
 
-    adapter: TypeAdapter[Code] = TypeAdapter(Code)
+    adapter: TypeAdapter[object] = TypeAdapter(Code)
     assert adapter.validate_python(1) == 1
     for invalid in (True, 1.0, "1"):
         with pytest.raises(ValidationError):
@@ -77,7 +77,7 @@ def test_native_pydantic_preserves_scalar_identity() -> None:
         GET = "GET"
         UNSET = None
 
-    nullable_adapter: TypeAdapter[MaybeMethod] = TypeAdapter(MaybeMethod)
+    nullable_adapter: TypeAdapter[object] = TypeAdapter(MaybeMethod)
     assert nullable_adapter.validate_json(b"null") is None
 
 
@@ -90,7 +90,7 @@ def test_native_pydantic_preserves_mixed_scalar_types() -> None:
         ENABLED = True
         ONE = 1
 
-    adapter: TypeAdapter[FlagOrCount] = TypeAdapter(FlagOrCount)
+    adapter: TypeAdapter[object] = TypeAdapter(FlagOrCount)
     assert adapter.validate_python(True) is True
     assert adapter.dump_json(adapter.validate_python(1)) == b"1"
     assert adapter.validate_json(b"true") is True
@@ -105,7 +105,7 @@ def test_native_pydantic_extended_namespace() -> None:
 
         DELETE = "DELETE"
 
-    adapter: TypeAdapter[ExtendedMethod] = TypeAdapter(ExtendedMethod)
+    adapter: TypeAdapter[object] = TypeAdapter(ExtendedMethod)
     assert adapter.validate_python("GET") == "GET"
     assert adapter.validate_python("DELETE") == "DELETE"
     assert adapter.json_schema()["enum"] == ["GET", "POST", "DELETE"]
