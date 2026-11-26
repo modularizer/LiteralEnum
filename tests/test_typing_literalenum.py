@@ -557,6 +557,14 @@ class TestOr:
         result = HttpMethod.__or__("not a literal enum")
         assert result is NotImplemented
 
+    def test_or_plain_type_composes_a_union_annotation(self):
+        from typing import Union, get_args, get_origin
+
+        optional = HttpMethod | None
+        assert get_origin(optional) is Union
+        assert set(get_args(optional)) == {HttpMethod, type(None)}
+        assert get_args(HttpMethod | str) == (HttpMethod, str)
+
     def test_or_preserves_both_as_literalenum(self):
         class A(LiteralEnum):
             X = 1

@@ -32,7 +32,7 @@ from __future__ import annotations
 import sys
 from types import MappingProxyType
 import inspect
-from typing import Any, Iterator, Mapping, TypeVar, NoReturn, TypeGuard, TYPE_CHECKING
+from typing import Any, Iterator, Mapping, TypeVar, NoReturn, TypeGuard, TYPE_CHECKING, Union
 
 if sys.version_info >= (3, 11):
     from typing import Never
@@ -411,8 +411,15 @@ class LiteralEnumMeta(type):
         return f"<LiteralEnum '{cls.__name__}' [{members}]>"
 
     if not TYPE_CHECKING:
-        def __or__(cls, other: Any) -> LiteralEnumMeta:
+        def __or__(cls, other: Any) -> Any:
+            # A plain type or None composes a union annotation (`Agent | None`), which
+            # pydantic and PEP 604 use everywhere; only a non-type operand is refused.
             if not isinstance(other, LiteralEnumMeta):
+                if other is None or isinstance(other, type):
+                    try:
+                        return Union[cls, other]
+                    except TypeError:
+                        return NotImplemented
                 return NotImplemented
             ns: dict[str, Any] = {}
             ns.update(cls._members_)
