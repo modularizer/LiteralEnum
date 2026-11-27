@@ -134,7 +134,7 @@ git push origin master --tags
 The tag starts two workflows: `.github/workflows/publish.yml` runs the tests,
 builds the sdist and wheel, and uploads to PyPI via trusted publishing, and
 `.github/workflows/build-pycharm-plugin.yml` builds the plugin and creates the
-GitHub Release.
+GitHub Release. Write the user-facing release notes on that GitHub Release.
 
 Releases created by a workflow's `GITHUB_TOKEN` (like the plugin workflow's
 `softprops/action-gh-release`) do not trigger other workflows, so do not rely on
