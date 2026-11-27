@@ -120,6 +120,35 @@ lestub myapp --out typings
 
 If you change the public API surface of `LiteralEnumMeta`, update `_render_enum_blocks` in `stubgen.py` to match.
 
+## Releasing
+
+Publishing is triggered by pushing a version tag, so a tag is the release:
+
+```bash
+# 1. Set the version in pyproject.toml and commit it on master
+# 2. Tag and push
+git tag -a v0.6.0 -m "v0.6.0"
+git push origin master --tags
+```
+
+The tag starts two workflows: `.github/workflows/publish.yml` runs the tests,
+builds the sdist and wheel, and uploads to PyPI via trusted publishing, and
+`.github/workflows/build-pycharm-plugin.yml` builds the plugin and creates the
+GitHub Release.
+
+Releases created by a workflow's `GITHUB_TOKEN` (like the plugin workflow's
+`softprops/action-gh-release`) do not trigger other workflows, so do not rely on
+the `release: published` trigger alone. That trigger is kept for releases
+published by hand.
+
+To publish the version currently on `master` without a new tag:
+
+```bash
+gh workflow run publish.yml --ref master
+```
+
+PyPI rejects re-uploading an existing version; bump the version for a fix.
+
 ## Reporting issues
 
 Open an issue at https://github.com/modularizer/LiteralEnum/issues.
